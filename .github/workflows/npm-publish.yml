@@ -1,0 +1,71 @@
+name: npm publish
+
+# Publishes the `screen-cast` web library (npm/) whenever a push to main carries a version
+# that is not on npm yet. Uses npm Trusted Publishing (OIDC): no npm token, no 2FA code.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "npm/**"
+      - ".github/workflows/npm-publish.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # npm trusted publishing + provenance
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: npm
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: npm/package-lock.json
+
+      - name: Update npm (trusted publishing needs npm 11.5+)
+        run: npm install -g npm@latest && npm --version
+
+      - name: Decide whether this version needs publishing
+        id: ver
+        run: |
+          V=$(node -p "require('./package.json').version")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if ! npm view screen-cast name >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::screen-cast is not on npm yet. Publish it once by hand (npm login && cd npm && npm publish --access public), then add this workflow as its Trusted Publisher on npmjs.com. Later versions publish automatically."
+          elif npm view "screen-cast@$V" version >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::screen-cast@$V is already on npm, nothing to publish."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::screen-cast@$V is new, will publish."
+          fi
+
+      - name: Install
+        if: steps.ver.outputs.publish == 'true'
+        run: npm ci
+
+      - name: Security audit
+        if: steps.ver.outputs.publish == 'true'
+        run: npm audit --audit-level=high
+
+      - name: Build and test
+        if: steps.ver.outputs.publish == 'true'
+        run: npm test
+
+      - name: Publish to npm
+        if: steps.ver.outputs.publish == 'true'
+        run: npm publish --access public --provenance

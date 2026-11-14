@@ -1,0 +1,67 @@
+{
+  "name": "screen-cast",
+  "version": "1.0.2",
+  "description": "Add secure screen casting to any web app: share a screen, tab, video or canvas from one browser and watch it on phones, TVs and laptops with a PIN or QR link. WebRTC, media-only viewers, zero dependencies. Includes a tiny Node signaling server and drop-in web components.",
+  "keywords": [
+    "screen-cast",
+    "screencast",
+    "screen-sharing",
+    "cast",
+    "webrtc",
+    "getDisplayMedia",
+    "streaming",
+    "web-components",
+    "signaling",
+    "pin",
+    "qr"
+  ],
+  "author": "Arun Pandey",
+  "license": "MIT",
+  "homepage": "https://github.com/00Arun/screen-cast/tree/main/npm#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/00Arun/screen-cast.git",
+    "directory": "npm"
+  },
+  "bugs": {
+    "url": "https://github.com/00Arun/screen-cast/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./elements": {
+      "types": "./dist/elements.d.ts",
+      "import": "./dist/elements.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": [
+    "./dist/elements.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.js",
+    "prepublishOnly": "npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

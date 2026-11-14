@@ -46,3 +46,30 @@ jobs:
         env:
           SC_BIND_IP: 127.0.0.1
         run: cargo run --locked -- --selftest "$RUNNER_TEMP/selftest.h264"
+
+  npm:
+    name: npm web library
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: npm
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: npm/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Security audit
+        run: npm audit --audit-level=high
+
+      - name: Build (TypeScript) and test (signaling server, protocol)
+        run: npm test
+
+      - name: Pack (dry run) to check publish contents
+        run: npm pack --dry-run

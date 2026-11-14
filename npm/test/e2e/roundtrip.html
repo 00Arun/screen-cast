@@ -1,0 +1,43 @@
+<!doctype html><meta charset="utf-8"><title>e2e</title>
+<canvas id="c" width="640" height="360"></canvas><video id="v" playsinline muted autoplay></video>
+<script type="module">
+import { CastHost, CastViewer } from '/dist/index.js';
+const out = (o) => (window.__result = JSON.stringify(o));
+try {
+  const c = document.getElementById('c');
+  const ctx = c.getContext('2d');
+  let t = 0;
+  setInterval(() => { ctx.fillStyle = `hsl(${(t += 7) % 360},80%,50%)`; ctx.fillRect(0, 0, 640, 360); }, 33);
+
+  const host = new CastHost({ server: '/cast' });
+  const session = await host.start({ source: c });
+
+  // Wrong PIN is rejected.
+  let wrongPin = 'accepted (bad)';
+  try { await new CastViewer({ server: '/cast' }).join({ room: session.room, pin: session.pin === '000000' ? '111111' : '000000' }); }
+  catch (e) { wrongPin = `rejected: ${e.message}`; }
+
+  // Join through the QR/join link (#room=..&key=..).
+  const link = new URL(session.joinUrl('/test/e2e/watch.html'));
+  const v = document.getElementById('v');
+  const viewer = new CastViewer({ server: '/cast', video: v });
+  const statuses = [];
+  viewer.on('status', (s) => statuses.push(s));
+  const joined = await viewer.joinFromUrl(link.hash);
+
+  const started = Date.now();
+  const timer = setInterval(() => {
+    if (v.videoWidth > 0 && v.currentTime > 0.3) {
+      clearInterval(timer);
+      out({ ok: true, joined, wrongPin, width: v.videoWidth, height: v.videoHeight, statuses, viewers: host.viewerCount,
+            linkHasPin: link.href.includes(session.pin) });
+      host.stop();
+    } else if (Date.now() - started > 20000) {
+      clearInterval(timer);
+      out({ ok: false, joined, wrongPin, statuses, width: v.videoWidth });
+    }
+  }, 200);
+} catch (e) {
+  out({ ok: false, error: String(e && e.message || e) });
+}
+</script>

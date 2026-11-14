@@ -1,0 +1,53 @@
+<!doctype html><meta charset="utf-8"><title>Elements</title>
+<style>
+  body { margin: 0; padding: 22px; background: #f3f4f6; font-family: system-ui, -apple-system, sans-serif; color: #111827; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  h3 { margin: 0 0 10px; font-size: 14px; color: #374151; }
+  canvas { width: 100%; border-radius: 12px; display: block; margin-bottom: 12px; }
+  iframe { width: 100%; height: 360px; border: 0; border-radius: 12px; background: #0b0d12; }
+</style>
+<script type="module" src="/dist/elements.js"></script>
+<div class="grid">
+  <section>
+    <h3>Your web app: &lt;screen-cast-host source="#player"&gt;</h3>
+    <canvas id="player" width="640" height="360"></canvas>
+    <screen-cast-host id="host" server="/cast" source="#player" viewer-url="/test/e2e/watch.html"></screen-cast-host>
+  </section>
+  <section>
+    <h3>Viewer page: &lt;screen-cast-viewer&gt; (opened from the join link)</h3>
+    <iframe id="viewer" allow="autoplay; fullscreen"></iframe>
+  </section>
+</div>
+<script type="module">
+  const c = document.getElementById('player'), ctx = c.getContext('2d');
+  let t = 0;
+  function draw() {
+    t += 1;
+    const g = ctx.createLinearGradient(0, 0, 0, 360); g.addColorStop(0, '#f6a75b'); g.addColorStop(.6, '#8cc8ec'); g.addColorStop(.61, '#4f9443');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 640, 360);
+    ctx.fillStyle = '#ffd36b'; ctx.beginPath(); ctx.arc(470, 80, 46, 0, 7); ctx.fill();
+    ctx.fillStyle = '#f1f1f1'; const x = 300 + Math.sin(t / 15) * 60;
+    ctx.beginPath(); ctx.ellipse(x, 290, 48, 36, 0, 0, 7); ctx.fill();
+    ctx.fillRect(x - 22, 210, 14, 50); ctx.fillRect(x + 6, 210, 14, 50);
+  }
+  draw();
+  setInterval(draw, 33); // (rAF is paused in hidden test windows)
+  const host = document.getElementById('host');
+  host.addEventListener('cast-start', (e) => { document.getElementById('viewer').src = e.detail.joinUrl; window.__join = e.detail; });
+  await customElements.whenDefined('screen-cast-host');
+  host.start();
+  const t0 = Date.now();
+  const timer = setInterval(() => {
+    const frame = document.getElementById('viewer').contentDocument;
+    const v = frame?.querySelector('screen-cast-viewer')?.shadowRoot?.querySelector('video');
+    if (v && v.videoWidth > 0 && v.currentTime > 0.3) {
+      clearInterval(timer);
+      window.__result = JSON.stringify({ ok: true, width: v.videoWidth, room: window.__join.room, joinUrlHasPin: window.__join.joinUrl.includes(window.__join.pin) });
+    } else if (Date.now() - t0 > 12000) {
+      clearInterval(timer);
+      window.__result = JSON.stringify({ ok: false, found: !!v, paused: v?.paused, muted: v?.muted, readyState: v?.readyState,
+        width: v?.videoWidth, time: v?.currentTime, tracks: v?.srcObject?.getTracks().map((t) => t.kind + ':' + t.readyState + ':' + t.muted),
+        error: v?.error?.message });
+    }
+  }, 250);
+</script>

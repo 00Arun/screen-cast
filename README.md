@@ -137,6 +137,31 @@ chmod +x ScreenCast-<version>-linux-x86_64.AppImage && ./ScreenCast-<version>-li
 ```
 `bubblewrap` (a `.deb` dependency) runs websites in WebKit's extra sandbox. `pulseaudio-utils` provides per-app audio capture.
 
+## Use it in your own web app (npm)
+
+The casting part is also published as a **web library** for developers. Add secure screen,
+tab, `<video>` or `<canvas>` casting with PIN/QR viewing to any website:
+
+```bash
+npm install screen-cast
+```
+
+```html
+<script type="module">import 'screen-cast/elements';</script>
+<screen-cast-host server="/cast" viewer-url="/watch"></screen-cast-host>   <!-- casting page -->
+<screen-cast-viewer server="/cast"></screen-cast-viewer>                   <!-- viewer page -->
+```
+
+```js
+import { createCastServer } from 'screen-cast/server';    // Node signaling server
+app.use(createCastServer({ path: '/cast' }).middleware);
+```
+
+Zero dependencies, TypeScript types, web components plus a JS API (`CastHost`, `CastViewer`).
+See **[npm/README.md](npm/README.md)** for the full guide.
+
+![screen-cast web components](docs/screenshots/npm-elements.png)
+
 ## How to use
 
 1. **Browse.** Type a site in the address bar and start the movie.
@@ -266,20 +291,21 @@ powershell -ExecutionPolicy Bypass -File scripts\build-windows.ps1
 
 ### Releases and npm (automatic)
 
-Pushing to `main` runs two GitHub Actions workflows:
+Pushing to `main` runs these GitHub Actions workflows:
 
 | Workflow | What it does |
 |---|---|
-| [`ci.yml`](.github/workflows/ci.yml) | On every push and pull request: Rust tests on macOS, Windows and Linux, an end-to-end media self-test on macOS, and tests, audit and a dry-run pack of the npm package. |
-| [`release.yml`](.github/workflows/release.yml) | When `VERSION` has no `v<version>` tag yet: builds the macOS universal `.dmg`, Windows `.exe`/`.msi` and Linux `.deb`/`.AppImage`, then creates the tag and a GitHub Release with `SHA256SUMS.txt` and the [CHANGELOG](CHANGELOG.md) entry as notes. Finally it publishes the `screen-cast` npm package with provenance through **npm Trusted Publishing** (no token). |
+| [`ci.yml`](.github/workflows/ci.yml) | On every push and pull request: Rust tests on macOS, Windows and Linux, an end-to-end media self-test on macOS, and build, tests, audit and a dry-run pack of the npm library. |
+| [`release.yml`](.github/workflows/release.yml) | When `VERSION` has no `v<version>` tag yet: builds the macOS universal `.dmg`, Windows `.exe`/`.msi` and Linux `.deb`/`.AppImage`, then creates the tag and a GitHub Release with `SHA256SUMS.txt` and the [CHANGELOG](CHANGELOG.md) entry as notes. |
+| [`npm-publish.yml`](.github/workflows/npm-publish.yml) | When `npm/` changes and its version isn't on npm yet: builds, tests and publishes the `screen-cast` web library with provenance through **npm Trusted Publishing** (no token). |
 
-To release, bump the version (`scripts/bump-version.sh`, or any local build), add a
-`## [x.y.z]` section to `CHANGELOG.md`, commit and push.
+To release, bump the version (`scripts/bump-version.sh`, or any local build, which also updates
+`npm/package.json`), add a `## [x.y.z]` section to `CHANGELOG.md`, commit and push.
 
 One-time npm setup (only before the very first npm release):
 1. Publish the package once by hand: `npm login`, then `cd npm && npm publish --access public`.
 2. On npmjs.com, open **screen-cast → Settings → Trusted Publisher → GitHub Actions** and enter
-   owner `00Arun`, repository `screen-cast`, workflow `release.yml`.
+   owner `00Arun`, repository `screen-cast`, workflow `npm-publish.yml`.
 
 `scripts/publish-release.sh` can still upload a locally built `.dmg` by hand.
 
@@ -322,7 +348,8 @@ SC_BIND_IP=127.0.0.1 cargo run -- --selftest out.h264 # macOS: encoder → WebRT
 | `ui/` | Toolbar, *Scan to watch* and About windows |
 | `web/` | Viewer page served to other devices |
 | `scripts/` | Build, version-bump and release scripts |
-| `.github/` | CI, release pipeline and Dependabot |
+| `npm/` | `screen-cast` web library: host/viewer API, web components, Node signaling server |
+| `.github/` | CI, release and npm publish pipelines, Dependabot |
 | `docs/screenshots/` | Images used in this README |
 
 ## About
