@@ -46,34 +46,3 @@ jobs:
         env:
           SC_BIND_IP: 127.0.0.1
         run: cargo run --locked -- --selftest "$RUNNER_TEMP/selftest.h264"
-
-  npm:
-    name: npm installer package
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: npm
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-
-      - name: Version matches VERSION file
-        run: |
-          V=$(tr -d '[:space:]' < ../VERSION)
-          P=$(node -p "require('./package.json').version")
-          [ "$V" = "$P" ] || { echo "::error::npm/package.json is $P but VERSION is $V (run scripts/bump-version.sh set $V)"; exit 1; }
-
-      - name: Syntax and unit tests
-        run: |
-          node --check bin/screen-cast.js
-          npm test
-          node bin/screen-cast.js help
-
-      - name: Security audit
-        run: npm audit --audit-level=high
-
-      - name: Pack (dry run) to check publish contents
-        run: npm pack --dry-run

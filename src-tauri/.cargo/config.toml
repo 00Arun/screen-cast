@@ -1,2 +1,4 @@
 [env]
 MACOSX_DEPLOYMENT_TARGET = "14.0"
+# Opus (audiopus_sys) ships an old CMakeLists; CMake 4 needs this to configure it.
+CMAKE_POLICY_VERSION_MINIMUM = "3.5"

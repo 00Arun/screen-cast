@@ -104,17 +104,7 @@ flowchart LR
 
 ## Download
 
-**Quickest:** with [Node.js](https://nodejs.org) 18+ installed, run
-
-```bash
-npx screen-cast
-```
-
-It downloads the right build for your computer from GitHub Releases, verifies its SHA-256
-checksum, installs it and opens it. `npx screen-cast uninstall` removes it again. See the
-[npm package](npm/README.md) for all commands.
-
-Or go to **[Releases](../../releases/latest)** and download the file for your system:
+Go to **[Releases](../../releases/latest)** and download the file for your system:
 
 | System | File | Requirements |
 |---|---|---|
@@ -332,7 +322,6 @@ SC_BIND_IP=127.0.0.1 cargo run -- --selftest out.h264 # macOS: encoder → WebRT
 | `ui/` | Toolbar, *Scan to watch* and About windows |
 | `web/` | Viewer page served to other devices |
 | `scripts/` | Build, version-bump and release scripts |
-| `npm/` | `npx screen-cast` installer package (zero dependencies) |
 | `.github/` | CI, release pipeline and Dependabot |
 | `docs/screenshots/` | Images used in this README |
 

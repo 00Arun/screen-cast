@@ -1,15 +1,18 @@
 version: 2
 updates:
+  # Rust crates: patch releases only. Most crates are 0.x and pinned to the versions Tauri,
+  # wry, gtk-rs, windows-rs and webrtc-rs use together; minor/major bumps are done by hand.
   - package-ecosystem: cargo
     directory: /src-tauri
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:
-      tauri:
-        patterns: ["tauri*", "wry", "tao"]
-      webrtc:
-        patterns: ["webrtc", "rtc*"]
+      cargo-patches:
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

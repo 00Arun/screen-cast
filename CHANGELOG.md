@@ -6,8 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [1.0.2] - 2026-11-14
 
 ### Added
-- `npx screen-cast` installer on npm: downloads the right build from GitHub Releases, verifies its SHA-256, installs and opens it.
-- CI on macOS, Windows and Linux, and an automatic release pipeline (installers for every OS + npm publish with provenance).
+- CI on macOS, Windows and Linux, and an automatic release pipeline that builds the installers for every OS and publishes them as a GitHub Release with checksums.
 
 ### Security
 - Filtering proxy for all website traffic: blocks destinations that resolve to loopback/LAN/link-local/CGNAT addresses (DNS tricks and rebinding). WebRTC is disabled for websites.

@@ -4,8 +4,7 @@ name: Release
 #   1. build the installers for macOS (universal .dmg), Windows (.exe/.msi) and Linux (.deb/.AppImage)
 #   2. tag vX.Y.Z and create a GitHub release with the installers, SHA256SUMS.txt and the
 #      CHANGELOG entry as notes
-#   3. publish the `screen-cast` installer CLI to npm with provenance, using npm Trusted
-#      Publishing (OIDC): no npm token, no 2FA code.
+# (The npm library is published separately by npm-publish.yml.)
 # Bump the version with `scripts/bump-version.sh` (the build scripts do it automatically),
 # add a CHANGELOG entry, commit and push.
 
@@ -35,8 +34,6 @@ jobs:
       - id: v
         run: |
           V=$(tr -d '[:space:]' < VERSION)
-          P=$(node -p "require('./npm/package.json').version")
-          [ "$V" = "$P" ] || { echo "::error::npm/package.json ($P) != VERSION ($V)"; exit 1; }
           echo "version=$V" >> "$GITHUB_OUTPUT"
           if git ls-remote --exit-code --tags origin "refs/tags/v$V" >/dev/null 2>&1; then
             echo "release=false" >> "$GITHUB_OUTPUT"
@@ -166,7 +163,7 @@ jobs:
             p {print}
           ' CHANGELOG.md > /tmp/notes.md
           [ -s /tmp/notes.md ] || echo "Screen Cast $V" > /tmp/notes.md
-          printf '\n---\n**Install:** `npx screen-cast` or download the file for your system below.\nVerify downloads with `SHA256SUMS.txt`.\n' >> /tmp/notes.md
+          printf '\n---\nDownload the installer for your system below and verify it with `SHA256SUMS.txt`.\n' >> /tmp/notes.md
           if ! git rev-parse "v$V" >/dev/null 2>&1; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -175,34 +172,3 @@ jobs:
           fi
           gh release view "v$V" >/dev/null 2>&1 || \
             gh release create "v$V" out/* --title "Screen Cast $V" --notes-file /tmp/notes.md
-
-  npm:
-    needs: [version, github-release]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write   # npm trusted publishing + provenance
-    defaults:
-      run:
-        working-directory: npm
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
-      - name: Update npm (trusted publishing needs npm 11.5+)
-        run: npm install -g npm@latest && npm --version
-      - name: Test
-        run: npm test
-      - name: Publish to npm
-        run: |
-          V="${{ needs.version.outputs.version }}"
-          if ! npm view screen-cast name >/dev/null 2>&1; then
-            # npm only allows a Trusted Publisher on a package that already exists.
-            echo "::warning::screen-cast is not on npm yet. Publish it once by hand (npm login && cd npm && npm publish --access public), then add this workflow as its Trusted Publisher on npmjs.com. Later releases publish automatically."
-          elif npm view "screen-cast@$V" version >/dev/null 2>&1; then
-            echo "::notice::screen-cast@$V is already on npm."
-          else
-            npm publish --access public --provenance
-          fi
