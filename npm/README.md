@@ -1,4 +1,4 @@
-# screen-cast
+# secure-screen-cast
 
 **Add secure screen casting to any web app.** Share a screen, a browser tab, a `<video>`, a
 `<canvas>` or any `MediaStream` from one browser, and let people watch it on their phone, TV
@@ -16,7 +16,7 @@ or laptop with a **room code + PIN** or a **one-tap join link**.
 ![screen-cast web components: a host casting a canvas and a viewer watching it](https://raw.githubusercontent.com/00Arun/screen-cast/main/docs/screenshots/npm-elements.png)
 
 ```bash
-npm install screen-cast
+npm install secure-screen-cast
 ```
 
 ## Quick start (3 steps)
@@ -26,7 +26,7 @@ npm install screen-cast
 ```js
 // Express
 import express from 'express';
-import { createCastServer } from 'screen-cast/server';
+import { createCastServer } from 'secure-screen-cast/server';
 
 const app = express();
 const cast = createCastServer({ path: '/cast' });
@@ -37,7 +37,7 @@ app.listen(3000);
 **2. Casting page:** drop in the host component.
 
 ```html
-<script type="module">import 'screen-cast/elements';</script>
+<script type="module">import 'secure-screen-cast/elements';</script>
 
 <!-- casts the screen or a tab (the browser asks which one) -->
 <screen-cast-host server="/cast" viewer-url="/watch"></screen-cast-host>
@@ -50,7 +50,7 @@ app.listen(3000);
 **3. Viewer page** (`/watch`):
 
 ```html
-<script type="module">import 'screen-cast/elements';</script>
+<script type="module">import 'secure-screen-cast/elements';</script>
 <screen-cast-viewer server="/cast"></screen-cast-viewer>
 ```
 
@@ -58,8 +58,8 @@ Pressing **Start casting** shows a room code, a PIN and a link. Viewers either o
 (it joins immediately, which makes it ideal for a QR code) or type the room code and PIN on your
 viewer page.
 
-> With a bundler (Vite, webpack, Angular CLI, Next.js…) just `import 'screen-cast/elements'`
-> once in your app. Without a bundler, serve `node_modules/screen-cast/dist/` and import
+> With a bundler (Vite, webpack, Angular CLI, Next.js…) just `import 'secure-screen-cast/elements'`
+> once in your app. Without a bundler, serve `node_modules/secure-screen-cast/dist/` and import
 > `/…/dist/elements.js`.
 
 ## JavaScript API
@@ -67,7 +67,7 @@ viewer page.
 Use the API when you want your own UI.
 
 ```js
-import { CastHost, CastViewer } from 'screen-cast';
+import { CastHost, CastViewer } from 'secure-screen-cast';
 
 // ---- casting side ----
 const host = new CastHost({ server: '/cast' });
@@ -94,7 +94,7 @@ if (!(await viewer.joinFromUrl())) {          // joined from a #room=…&key=…
 
 ```jsx
 import { useEffect, useRef } from 'react';
-import { CastViewer } from 'screen-cast';
+import { CastViewer } from 'secure-screen-cast';
 
 export function Watch() {
   const video = useRef(null);
@@ -113,7 +113,7 @@ call `leave()` / `stop()` when it is destroyed. The web components work in every
 ## Server options
 
 ```js
-import { createCastServer } from 'screen-cast/server';
+import { createCastServer } from 'secure-screen-cast/server';
 
 const cast = createCastServer({
   path: '/cast',                         // URL prefix (default '/cast')

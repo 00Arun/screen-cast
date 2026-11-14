@@ -1,7 +1,7 @@
 /**
  * Drop-in web components.
  *
- *   import 'screen-cast/elements';
+ *   import 'secure-screen-cast/elements';
  *
  *   <!-- page that casts -->
  *   <screen-cast-host server="/cast" viewer-url="/watch.html"></screen-cast-host>

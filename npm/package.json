@@ -1,9 +1,9 @@
 {
-  "name": "screen-cast",
+  "name": "secure-screen-cast",
   "version": "1.0.2",
   "description": "Add secure screen casting to any web app: share a screen, tab, video or canvas from one browser and watch it on phones, TVs and laptops with a PIN or QR link. WebRTC, media-only viewers, zero dependencies. Includes a tiny Node signaling server and drop-in web components.",
   "keywords": [
-    "screen-cast",
+    "secure-screen-cast",
     "screencast",
     "screen-sharing",
     "cast",

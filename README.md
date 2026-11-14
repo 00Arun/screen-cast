@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/00Arun/screen-cast/actions/workflows/ci.yml"><img src="https://github.com/00Arun/screen-cast/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://www.npmjs.com/package/screen-cast"><img src="https://img.shields.io/npm/v/screen-cast?label=npm" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/secure-screen-cast"><img src="https://img.shields.io/npm/v/secure-screen-cast?label=npm" alt="npm"></a>
   <a href="../../releases/latest"><img src="https://img.shields.io/github/v/release/00Arun/screen-cast?label=release" alt="release"></a>
 </p>
 
@@ -143,17 +143,17 @@ The casting part is also published as a **web library** for developers. Add secu
 tab, `<video>` or `<canvas>` casting with PIN/QR viewing to any website:
 
 ```bash
-npm install screen-cast
+npm install secure-screen-cast
 ```
 
 ```html
-<script type="module">import 'screen-cast/elements';</script>
+<script type="module">import 'secure-screen-cast/elements';</script>
 <screen-cast-host server="/cast" viewer-url="/watch"></screen-cast-host>   <!-- casting page -->
 <screen-cast-viewer server="/cast"></screen-cast-viewer>                   <!-- viewer page -->
 ```
 
 ```js
-import { createCastServer } from 'screen-cast/server';    // Node signaling server
+import { createCastServer } from 'secure-screen-cast/server';    // Node signaling server
 app.use(createCastServer({ path: '/cast' }).middleware);
 ```
 
@@ -297,15 +297,15 @@ Pushing to `main` runs these GitHub Actions workflows:
 |---|---|
 | [`ci.yml`](.github/workflows/ci.yml) | On every push and pull request: Rust tests on macOS, Windows and Linux, an end-to-end media self-test on macOS, and build, tests, audit and a dry-run pack of the npm library. |
 | [`release.yml`](.github/workflows/release.yml) | When `VERSION` has no `v<version>` tag yet: builds the macOS universal `.dmg`, Windows `.exe`/`.msi` and Linux `.deb`/`.AppImage`, then creates the tag and a GitHub Release with `SHA256SUMS.txt` and the [CHANGELOG](CHANGELOG.md) entry as notes. |
-| [`npm-publish.yml`](.github/workflows/npm-publish.yml) | When `npm/` changes and its version isn't on npm yet: builds, tests and publishes the `screen-cast` web library with provenance through **npm Trusted Publishing** (no token). |
+| [`npm-publish.yml`](.github/workflows/npm-publish.yml) | When `npm/` changes and its version isn't on npm yet: builds, tests and publishes the `secure-screen-cast` web library with provenance through **npm Trusted Publishing** (no token). |
 
 To release, bump the version (`scripts/bump-version.sh`, or any local build, which also updates
 `npm/package.json`), add a `## [x.y.z]` section to `CHANGELOG.md`, commit and push.
 
 One-time npm setup (only before the very first npm release):
 1. Publish the package once by hand: `npm login`, then `cd npm && npm publish --access public`.
-2. On npmjs.com, open **screen-cast → Settings → Trusted Publisher → GitHub Actions** and enter
-   owner `00Arun`, repository `screen-cast`, workflow `npm-publish.yml`.
+2. On npmjs.com, open **secure-screen-cast → Settings → Trusted Publisher → GitHub Actions** and enter
+   owner `00Arun`, repository `secure-screen-cast`, workflow `npm-publish.yml`.
 
 `scripts/publish-release.sh` can still upload a locally built `.dmg` by hand.
 
@@ -348,7 +348,7 @@ SC_BIND_IP=127.0.0.1 cargo run -- --selftest out.h264 # macOS: encoder → WebRT
 | `ui/` | Toolbar, *Scan to watch* and About windows |
 | `web/` | Viewer page served to other devices |
 | `scripts/` | Build, version-bump and release scripts |
-| `npm/` | `screen-cast` web library: host/viewer API, web components, Node signaling server |
+| `npm/` | `secure-screen-cast` web library: host/viewer API, web components, Node signaling server |
 | `.github/` | CI, release and npm publish pipelines, Dependabot |
 | `docs/screenshots/` | Images used in this README |
 

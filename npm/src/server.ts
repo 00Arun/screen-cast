@@ -4,7 +4,7 @@
  * It only introduces hosts and viewers to each other (WebRTC offer/answer/ICE). Video and
  * audio flow directly between browsers, encrypted (DTLS-SRTP); they never pass through here.
  *
- *   import { createCastServer } from 'screen-cast/server';
+ *   import { createCastServer } from 'secure-screen-cast/server';
  *   const cast = createCastServer({ path: '/cast' });
  *   app.use(cast.middleware);            // Express / Connect
  *   // or: http.createServer((req, res) => cast.handle(req, res).then(done => done || next()))

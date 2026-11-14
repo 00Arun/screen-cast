@@ -1,6 +1,6 @@
 name: npm publish
 
-# Publishes the `screen-cast` web library (npm/) whenever a push to main carries a version
+# Publishes the `secure-screen-cast` web library (npm/) whenever a push to main carries a version
 # that is not on npm yet. Uses npm Trusted Publishing (OIDC): no npm token, no 2FA code.
 
 on:
@@ -43,15 +43,15 @@ jobs:
         run: |
           V=$(node -p "require('./package.json').version")
           echo "version=$V" >> "$GITHUB_OUTPUT"
-          if ! npm view screen-cast name >/dev/null 2>&1; then
+          if ! npm view secure-screen-cast name >/dev/null 2>&1; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::screen-cast is not on npm yet. Publish it once by hand (npm login && cd npm && npm publish --access public), then add this workflow as its Trusted Publisher on npmjs.com. Later versions publish automatically."
-          elif npm view "screen-cast@$V" version >/dev/null 2>&1; then
+            echo "::warning::secure-screen-cast is not on npm yet. Publish it once by hand (npm login && cd npm && npm publish --access public), then add this workflow as its Trusted Publisher on npmjs.com. Later versions publish automatically."
+          elif npm view "secure-screen-cast@$V" version >/dev/null 2>&1; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::screen-cast@$V is already on npm, nothing to publish."
+            echo "::notice::secure-screen-cast@$V is already on npm, nothing to publish."
           else
             echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::screen-cast@$V is new, will publish."
+            echo "::notice::secure-screen-cast@$V is new, will publish."
           fi
 
       - name: Install

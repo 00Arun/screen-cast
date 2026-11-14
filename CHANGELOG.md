@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [1.0.2] - 2026-11-14
 
 ### Added
-- `screen-cast` on npm: a web library to add secure casting to any web app. `CastHost` / `CastViewer` API, `<screen-cast-host>` / `<screen-cast-viewer>` web components and a zero-dependency Node signaling server (PIN + join link, lock-out, PIN rotation, IP-bound tokens, strict signaling).
+- `secure-screen-cast` on npm: a web library to add secure casting to any web app. `CastHost` / `CastViewer` API, `<screen-cast-host>` / `<screen-cast-viewer>` web components and a zero-dependency Node signaling server (PIN + join link, lock-out, PIN rotation, IP-bound tokens, strict signaling).
 - CI on macOS, Windows and Linux, and an automatic release pipeline that builds the installers for every OS and publishes them as a GitHub Release with checksums.
 
 ### Security
