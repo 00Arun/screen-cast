@@ -69,7 +69,7 @@ webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
 webkit2gtk-sys = "=2.0.2"
 glib-sys = "0.18"
 gobject-sys = "0.18"
-gio-sys = "0.18"
+gio-sys = "0.22"
 gtk = "0.18"
 
 [profile.release]
