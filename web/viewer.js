@@ -148,12 +148,13 @@ function showJoin(msg = '') {
   $('pin').focus();
 }
 
-async function join(pin) {
+async function join(pin, token = '') {
   $('joinMsg').textContent = 'Checking…';
   try {
-    const res = await post('/api/join', { pin });
+    const res = await post('/api/join', { pin, token });
     if (res.ok) return watch();
-    if (res.status === 429) showJoin('Too many wrong tries. Wait 5 minutes.');
+    if (res.status === 409) showJoin('The computer is not casting right now.');
+    else if (res.status === 429) showJoin('Too many wrong tries. Wait a few minutes.');
     else if (res.status === 503) showJoin('Too many viewers are connected.');
     else showJoin('Wrong or expired PIN.');
   } catch {
@@ -168,6 +169,7 @@ $('joinForm').addEventListener('submit', (e) => {
 
 // A scanned QR code opens "/#pin=123456". The fragment never reaches the server; read it
 // once and remove it from the address bar and history.
+const qrToken = (location.hash.match(/[#&]t=([0-9a-f]{32})/) || [])[1];
 const qrPin = (location.hash.match(/pin=(\d{6})/) || [])[1];
 if (location.hash) history.replaceState(null, '', location.pathname);
 
@@ -197,6 +199,7 @@ function poke() {
   try {
     const res = await fetch('/api/me', { credentials: 'same-origin' });
     if (res.ok) watch();
+    else if (qrToken) join('', qrToken);
     else if (qrPin) join(qrPin);
     else showJoin();
   } catch {

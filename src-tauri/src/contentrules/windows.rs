@@ -3,7 +3,10 @@
 
 use std::sync::Arc;
 
-use webview2_com::{take_pwstr, Microsoft::Web::WebView2::Win32::*, WebResourceRequestedEventHandler};
+use webview2_com::{
+    take_pwstr, LaunchingExternalUriSchemeEventHandler, NavigationStartingEventHandler,
+    Microsoft::Web::WebView2::Win32::*, WebResourceRequestedEventHandler,
+};
 use windows_core::{Interface, HSTRING, PWSTR};
 
 use crate::adblock::{is_local_url, Blocker};
@@ -41,6 +44,41 @@ pub fn install(webview: &tauri::Webview, blocker: Arc<Blocker>) {
                 let _ = core.AddWebResourceRequestedFilter(&filter, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
             }
         }
+        // iframes: wry only checks top-level navigations on Windows, so apply the same scheme,
+        // local-network and ad policy to every frame navigation here.
+        let frame_blocker = blocker.clone();
+        let mut frame_token = 0i64;
+        let _ = core.add_FrameNavigationStarting(
+            &NavigationStartingEventHandler::create(Box::new(move |_, args| {
+                let Some(args) = args else { return Ok(()) };
+                let mut uri = PWSTR::null();
+                args.Uri(&mut uri)?;
+                let uri = take_pwstr(uri);
+                let lower = uri.to_ascii_lowercase();
+                let scheme_ok = ["http://", "https://", "blob:", "about:blank", "about:srcdoc"]
+                    .iter()
+                    .any(|p| lower.starts_with(p));
+                if !scheme_ok || is_local_url(&uri) || frame_blocker.should_block_request(&uri, "", "subdocument") {
+                    args.SetCancel(true)?;
+                }
+                Ok(())
+            })),
+            &mut frame_token,
+        );
+        // Never hand a link to another app (ms-msdt:, search-ms:, mailto:, custom schemes...).
+        if let Ok(c18) = core.cast::<ICoreWebView2_18>() {
+            let mut ext_token = 0i64;
+            let _ = c18.add_LaunchingExternalUriScheme(
+                &LaunchingExternalUriSchemeEventHandler::create(Box::new(|_, args| {
+                    if let Some(args) = args {
+                        args.SetCancel(true)?;
+                    }
+                    Ok(())
+                })),
+                &mut ext_token,
+            );
+        }
+
         let page = core.clone();
         let mut token = 0i64;
         let _ = core.add_WebResourceRequested(

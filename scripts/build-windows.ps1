@@ -22,7 +22,7 @@ if ($env:NO_BUMP -eq "1") { $version = (Get-Content "$root\VERSION" -Raw).Trim()
 else { $part = if ($env:BUMP) { $env:BUMP } else { "patch" }; $version = & "$PSScriptRoot\bump-version.ps1" $part }
 Write-Host "Building Screen Cast $version"
 Set-Location "$root\src-tauri"
-cargo tauri build
+cargo tauri build -- --locked
 
 Write-Host ""
 Write-Host "Installers:"

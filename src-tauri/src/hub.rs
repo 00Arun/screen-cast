@@ -64,6 +64,10 @@ pub struct Hub {
     live: AtomicBool,
     peers: Mutex<HashMap<String, (u64, Pc)>>,
     seq: AtomicU64,
+    /// Viewers being set up (counted against the cap before they are connected).
+    pending: AtomicU64,
+    /// Bumped by close_all (PIN change / stop); set-ups started earlier are discarded.
+    generation: AtomicU64,
     on_change: OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 
@@ -153,6 +157,8 @@ impl Hub {
             live: AtomicBool::new(false),
             peers: Mutex::new(HashMap::new()),
             seq: AtomicU64::new(0),
+            pending: AtomicU64::new(0),
+            generation: AtomicU64::new(0),
             on_change: OnceLock::new(),
         })
     }
@@ -182,9 +188,6 @@ impl Hub {
         self.peers.lock().unwrap().len()
     }
 
-    pub fn has_viewer(&self, token: &str) -> bool {
-        self.peers.lock().unwrap().contains_key(token)
-    }
 
     pub fn request_keyframe(&self) {
         self.keyframe.store(true, Ordering::Relaxed);
@@ -210,6 +213,7 @@ impl Hub {
     }
 
     pub fn close_all(&self) {
+        self.generation.fetch_add(1, Ordering::SeqCst);
         let peers: Vec<Pc> = self.peers.lock().unwrap().drain().map(|(_, (_, pc))| pc).collect();
         for pc in peers {
             tokio::spawn(async move {
@@ -220,7 +224,23 @@ impl Hub {
     }
 
     /// Accepts a viewer's SDP offer and returns the SDP answer (non-trickle ICE).
-    pub async fn answer(self: &Arc<Self>, token: String, offer: String) -> Result<String, String> {
+    pub async fn answer(self: &Arc<Self>, token: String, offer: String, max_viewers: usize) -> Result<String, String> {
+        // Reserve a viewer slot atomically (connected + in-progress set-ups).
+        {
+            let peers = self.peers.lock().unwrap();
+            let busy = peers.len() + self.pending.load(Ordering::SeqCst) as usize;
+            if busy >= max_viewers && !peers.contains_key(&token) {
+                return Err("too many viewers".into());
+            }
+            self.pending.fetch_add(1, Ordering::SeqCst);
+        }
+        let generation = self.generation.load(Ordering::SeqCst);
+        let result = self.answer_inner(token, offer, generation).await;
+        self.pending.fetch_sub(1, Ordering::SeqCst);
+        result
+    }
+
+    async fn answer_inner(self: &Arc<Self>, token: String, offer: String, generation: u64) -> Result<String, String> {
         let e = |e: rtc::shared::error::Error| e.to_string();
         let vcodec = video_codec();
         let acodec = audio_codec();
@@ -256,10 +276,18 @@ impl Hub {
         pc.set_local_description(answer).await.map_err(e)?;
         let _ = tokio::time::timeout(Duration::from_secs(3), gathered_rx.recv()).await;
         let sdp = pc.local_description().await.ok_or("no answer")?.sdp;
-        debug(&format!("answer sdp:\n{sdp}"));
 
         let id = self.seq.fetch_add(1, Ordering::Relaxed);
-        if let Some((_, old)) = self.peers.lock().unwrap().insert(token.clone(), (id, pc.clone())) {
+        let mut peers = self.peers.lock().unwrap();
+        if self.generation.load(Ordering::SeqCst) != generation || !self.is_live() {
+            // The PIN changed or the cast stopped while this viewer was being set up.
+            drop(peers);
+            let _ = pc.close().await;
+            return Err("session ended".into());
+        }
+        let old = peers.insert(token.clone(), (id, pc.clone()));
+        drop(peers);
+        if let Some((_, old)) = old {
             tokio::spawn(async move {
                 let _ = old.close().await;
             });

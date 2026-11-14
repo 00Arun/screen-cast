@@ -21,4 +21,9 @@ Set-Content $cargo ($rx.Replace($text, "`${1}$new`${2}", 1)) -NoNewline
 $conf = "$root\src-tauri\tauri.conf.json"
 $text = Get-Content $conf -Raw
 Set-Content $conf ([regex]::Replace($text, '("version":\s*")[^"]+(")', "`${1}$new`${2}")) -NoNewline
+$lock = "$root\src-tauri\Cargo.lock"
+if (Test-Path $lock) {
+  $text = Get-Content $lock -Raw
+  Set-Content $lock ([regex]::Replace($text, '(\[\[package\]\]\r?\nname = "screen_cast"\r?\nversion = ")[^"]+(")', "`${1}$new`${2}")) -NoNewline
+}
 Write-Output $new

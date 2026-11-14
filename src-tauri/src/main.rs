@@ -8,6 +8,7 @@ mod contentrules;
 #[cfg(target_os = "macos")]
 mod encoder;
 mod hub;
+mod netguard;
 #[cfg(target_os = "macos")]
 mod selftest;
 mod server;
@@ -42,6 +43,9 @@ pub struct AppState {
     /// A video in the page is "fullscreen": window goes fullscreen, toolbar hidden.
     page_fs: std::sync::atomic::AtomicBool,
     page_fs_changed: Mutex<std::time::Instant>,
+    /// The user left fullscreen with the window controls: ignore the page's fullscreen
+    /// state until it has really left fullscreen itself (no forced re-entry).
+    page_fs_suppressed: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Serialize, Clone)]
@@ -78,12 +82,13 @@ fn push_state(app: &AppHandle) {
     let _ = app.emit_to("qr", "state", state);
 }
 
-/// Link encoded in the QR code. The PIN rides in the URL fragment, which browsers never send
-/// to the server; the viewer page reads it once and removes it.
+/// Link encoded in the QR code. It carries a long random secret (not the PIN) in the URL
+/// fragment, which browsers never send over the network; the viewer page reads it once and
+/// removes it. The secret stops working when the cast stops or the PIN changes.
 fn watch_link(app: &AppHandle) -> Option<String> {
     let ip = server::lan_ip()?;
-    let pin = app.state::<AppState>().server.pin();
-    Some(format!("http://{ip}:{}/#pin={pin}", server::PORT))
+    let token = app.state::<AppState>().server.qr_token();
+    Some(format!("http://{ip}:{}/#t={token}", server::PORT))
 }
 
 fn qr_svg(text: &str) -> Option<String> {
@@ -220,14 +225,46 @@ fn navigate(app: AppHandle, input: String) -> Result<(), String> {
     content_webview(&app)?.navigate(url).map_err(|e| e.to_string())
 }
 
+/// Back/forward through the engine's native API (a page can override `history.back`).
+fn history_step(app: &AppHandle, forward: bool) -> Result<(), String> {
+    content_webview(app)?
+        .with_webview(move |pv| {
+            #[cfg(target_os = "macos")]
+            unsafe {
+                let wv = &*(pv.inner() as *const objc2_web_kit::WKWebView);
+                if forward {
+                    let _ = wv.goForward();
+                } else {
+                    let _ = wv.goBack();
+                }
+            }
+            #[cfg(windows)]
+            unsafe {
+                if let Ok(core) = pv.controller().CoreWebView2() {
+                    let _ = if forward { core.GoForward() } else { core.GoBack() };
+                }
+            }
+            #[cfg(target_os = "linux")]
+            {
+                use webkit2gtk::WebViewExt;
+                if forward {
+                    pv.inner().go_forward();
+                } else {
+                    pv.inner().go_back();
+                }
+            }
+        })
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn go_back(app: AppHandle) -> Result<(), String> {
-    content_webview(&app)?.eval("history.back()").map_err(|e| e.to_string())
+    history_step(&app, false)
 }
 
 #[tauri::command]
 fn go_forward(app: AppHandle) -> Result<(), String> {
-    content_webview(&app)?.eval("history.forward()").map_err(|e| e.to_string())
+    history_step(&app, true)
 }
 
 #[tauri::command]
@@ -242,11 +279,14 @@ async fn toggle_cast(app: AppHandle) -> Result<(), String> {
     if let Some(cap) = running {
         cap.stop();
         st.hub.set_live(false);
+        st.server.end_sessions();
         close_qr_window(&app);
         push_state(&app);
         return Ok(());
     }
     let cap = start_capture(&app).await?;
+    // Every cast gets a fresh PIN and QR secret.
+    st.server.rotate_pin();
     *st.capture.lock().unwrap() = Some(cap);
     st.hub.set_live(true);
     push_state(&app);
@@ -278,7 +318,11 @@ fn schedule_capture_restart(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(700)).await;
         let st = app.state::<AppState>();
-        if st.resize_gen.load(Ordering::SeqCst) != generation || st.capture.lock().unwrap().is_none() {
+        if st.resize_gen.load(Ordering::SeqCst) != generation {
+            return;
+        }
+        if st.capture.lock().unwrap().is_none() {
+            reveal_toolbar_if_needed(&app);
             return;
         }
         match start_capture(&app).await {
@@ -288,12 +332,22 @@ fn schedule_capture_restart(app: &AppHandle) {
                     old.stop();
                 }
                 st.hub.request_keyframe();
+                reveal_toolbar_if_needed(&app);
             }
             Err(e) => {
+                reveal_toolbar_if_needed(&app);
                 let _ = app.emit_to("toolbar", "blocked", format!("Cast restart failed: {e}"));
             }
         }
     });
+}
+
+fn reveal_toolbar_if_needed(app: &AppHandle) {
+    if !app.state::<AppState>().page_fs.load(Ordering::SeqCst) {
+        if let Some(t) = app.get_webview("toolbar") {
+            let _ = t.show();
+        }
+    }
 }
 
 #[tauri::command]
@@ -380,8 +434,16 @@ fn set_page_fullscreen(app: &AppHandle, on: bool) {
         return;
     }
     *st.page_fs_changed.lock().unwrap() = std::time::Instant::now();
+    let casting = st.capture.lock().unwrap().is_some();
     if let Some(t) = app.get_webview("toolbar") {
-        let _ = if on { t.hide() } else { t.show() };
+        // When leaving fullscreen while casting, the toolbar (which shows the PIN) is only
+        // revealed after the capture crop has been updated (see schedule_capture_restart),
+        // so the PIN never appears in the stream.
+        if on {
+            let _ = t.hide();
+        } else if !casting {
+            let _ = t.show();
+        }
     }
     if let Some(w) = app.get_window("main") {
         let _ = w.set_fullscreen(on);
@@ -400,7 +462,17 @@ fn watch_page_fullscreen(app: AppHandle) {
                 let page_on = r.trim() == "1";
                 let st = h.state::<AppState>();
                 let on = st.page_fs.load(Ordering::SeqCst);
+                if !page_on {
+                    st.page_fs_suppressed.store(false, Ordering::SeqCst);
+                }
+                if page_on && st.page_fs_suppressed.load(Ordering::SeqCst) {
+                    return;
+                }
                 if page_on != on {
+                    // Rate limit: at most one switch per second.
+                    if st.page_fs_changed.lock().unwrap().elapsed() < std::time::Duration::from_secs(1) {
+                        return;
+                    }
                     set_page_fullscreen(&h, page_on);
                     return;
                 }
@@ -409,6 +481,7 @@ fn watch_page_fullscreen(app: AppHandle) {
                 if on && settled {
                     let fullscreen = h.get_window("main").and_then(|w| w.is_fullscreen().ok()).unwrap_or(true);
                     if !fullscreen {
+                        st.page_fs_suppressed.store(true, Ordering::SeqCst);
                         if let Some(c) = h.get_webview("content") {
                             let _ = c.eval("document.exitFullscreen && document.exitFullscreen()");
                         }
@@ -436,18 +509,22 @@ fn layout(window: &tauri::Window) {
     schedule_capture_restart(app);
 }
 
-fn build_content_webview(app: &AppHandle) -> WebviewBuilder<tauri::Wry> {
+fn build_content_webview(app: &AppHandle, proxy_port: u16) -> WebviewBuilder<tauri::Wry> {
     let nav_app = app.clone();
     let popup_app = app.clone();
     let dl_app = app.clone();
     let load_app = app.clone();
 
-    // SC_HOME: developer override of the start page (testing only).
-    let home = std::env::var("SC_HOME").ok().and_then(|u| Url::parse(&u).ok()).unwrap_or_else(|| Url::parse(HOME).unwrap());
+    // SC_HOME: developer override of the start page (debug builds only).
+    let home = if cfg!(debug_assertions) { std::env::var("SC_HOME").ok().and_then(|u| Url::parse(&u).ok()) } else { None }
+        .unwrap_or_else(|| Url::parse(HOME).unwrap());
     WebviewBuilder::new("content", WebviewUrl::External(home))
         // Private mode: no cookies, cache or storage survive quitting the app.
         .incognito(true)
         .devtools(false)
+        // All website traffic goes through the local filtering proxy (blocks LAN/localhost
+        // destinations after DNS resolution).
+        .proxy_url(Url::parse(&format!("http://127.0.0.1:{proxy_port}")).unwrap())
         .initialization_script_for_all_frames(include_str!("harden.js"))
         .on_navigation(move |url| navigation_allowed(&nav_app, url))
         .on_new_window(move |url, _features| {
@@ -542,6 +619,7 @@ fn main() {
             resize_gen: AtomicU64::new(0),
             page_fs: std::sync::atomic::AtomicBool::new(false),
             page_fs_changed: Mutex::new(std::time::Instant::now()),
+            page_fs_suppressed: std::sync::atomic::AtomicBool::new(false),
         })
         .invoke_handler(tauri::generate_handler![
             get_state, navigate, go_back, go_forward, reload, toggle_cast, new_pin, show_qr, qr_info,
@@ -552,6 +630,8 @@ fn main() {
             {
                 let h = handle.clone();
                 hub.set_on_change(Box::new(move || push_state(&h)));
+                let h2 = handle.clone();
+                let _ = server.on_pin_change.set(Box::new(move || push_state(&h2)));
             }
             tauri::async_runtime::spawn(server::run(server.clone()));
 
@@ -571,8 +651,9 @@ fn main() {
                 LogicalPosition::new(0.0, 0.0),
                 LogicalSize::new(w, TOOLBAR_H),
             )?;
+            let proxy_port = tauri::async_runtime::block_on(netguard::start())?;
             let content = window.add_child(
-                build_content_webview(&handle),
+                build_content_webview(&handle, proxy_port),
                 LogicalPosition::new(0.0, TOOLBAR_H),
                 LogicalSize::new(w, h - TOOLBAR_H),
             )?;
@@ -588,19 +669,25 @@ fn main() {
             watch_page_fullscreen(handle.clone());
 
             // Developer testing only: start casting automatically.
-            if std::env::var_os("SC_AUTOCAST").is_some() {
+            if cfg!(debug_assertions) {
+                if let Ok(js) = std::env::var("SC_TEST_JS") {
+                    let h = handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+                        if let Some(c) = h.get_webview("content") {
+                            let _ = c.eval(js);
+                        }
+                    });
+                }
+            }
+            if cfg!(debug_assertions) && std::env::var_os("SC_AUTOCAST").is_some() {
                 let h = handle.clone();
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                     if let Err(e) = toggle_cast(h.clone()).await {
                         eprintln!("autocast failed: {e}");
                     }
-                    if let Ok(js) = std::env::var("SC_TEST_JS") {
-                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                        if let Some(c) = h.get_webview("content") {
-                            let _ = c.eval(js);
-                        }
-                    }
+
                 });
             }
             Ok(())

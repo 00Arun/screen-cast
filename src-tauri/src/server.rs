@@ -35,6 +35,11 @@ const MAX_VIEWERS: usize = 12;
 const MAX_PIN_FAILS: u32 = 5;
 const PIN_LOCK: Duration = Duration::from_secs(5 * 60);
 const SESSION_TTL: Duration = Duration::from_secs(12 * 60 * 60);
+/// Network-wide wrong-PIN budget: beyond this many failures in the window the PIN rotates,
+/// so spreading guesses over many IP addresses doesn't help an attacker.
+const GLOBAL_FAILS: usize = 20;
+const GLOBAL_WINDOW: Duration = Duration::from_secs(10 * 60);
+const MAX_CONNECTIONS: usize = 64;
 
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; \
 media-src 'self' blob: mediastream:; connect-src 'self'; base-uri 'none'; form-action 'self'; \
@@ -42,14 +47,19 @@ frame-ancestors 'none'";
 
 pub struct Sessions {
     pin: String,
-    tokens: HashMap<String, Instant>, // viewer token -> created
+    /// Long random secret put in the QR code instead of the PIN; changes with the PIN.
+    qr_token: String,
+    tokens: HashMap<String, (Instant, IpAddr)>, // viewer token -> (created, bound IP)
     fails: HashMap<IpAddr, (u32, Instant)>,
+    global_fails: Vec<Instant>,
 }
 
 pub struct ServerState {
     pub sessions: Mutex<Sessions>,
     pub hub: Arc<Hub>,
     pub port: u16,
+    /// Called when the PIN changes on its own (brute-force protection) so the UI updates.
+    pub on_pin_change: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl ServerState {
@@ -57,11 +67,14 @@ impl ServerState {
         Arc::new(Self {
             sessions: Mutex::new(Sessions {
                 pin: new_pin(),
+                qr_token: random_hex(16),
                 tokens: HashMap::new(),
                 fails: HashMap::new(),
+                global_fails: Vec::new(),
             }),
             hub,
             port,
+            on_pin_change: std::sync::OnceLock::new(),
         })
     }
 
@@ -69,22 +82,38 @@ impl ServerState {
         self.sessions.lock().unwrap().pin.clone()
     }
 
-    /// New PIN and every viewer is disconnected and must re-enter it.
+    pub fn qr_token(&self) -> String {
+        self.sessions.lock().unwrap().qr_token.clone()
+    }
+
+    /// New PIN (and QR secret); every viewer is disconnected and must join again.
     pub fn rotate_pin(&self) -> String {
         let mut s = self.sessions.lock().unwrap();
-        s.pin = new_pin();
-        s.tokens.clear();
+        Self::rotate_locked(&mut s);
         drop(s);
         self.hub.close_all();
         self.pin()
     }
 
-    fn valid_token(&self, headers: &HeaderMap) -> Option<String> {
+    fn rotate_locked(s: &mut Sessions) {
+        s.pin = new_pin();
+        s.qr_token = random_hex(16);
+        s.tokens.clear();
+        s.global_fails.clear();
+    }
+
+    /// Ends every viewer session (cast stopped).
+    pub fn end_sessions(&self) {
+        self.sessions.lock().unwrap().tokens.clear();
+    }
+
+    /// Session token from the cookie, valid only from the IP address it was issued to.
+    fn valid_token(&self, headers: &HeaderMap, ip: IpAddr) -> Option<String> {
         let token = cookie(headers, "sc_view")?;
         let mut s = self.sessions.lock().unwrap();
         let now = Instant::now();
-        s.tokens.retain(|_, t| now.duration_since(*t) < SESSION_TTL);
-        s.tokens.keys().find(|k| ct_eq(k, &token)).cloned()
+        s.tokens.retain(|_, (t, _)| now.duration_since(*t) < SESSION_TTL);
+        s.tokens.iter().find(|(k, (_, bound))| ct_eq(k, &token) && *bound == ip).map(|(k, _)| k.clone())
     }
 }
 
@@ -238,7 +267,11 @@ async fn style_css() -> Response {
 
 #[derive(Deserialize)]
 struct JoinReq {
+    #[serde(default)]
     pin: String,
+    /// Secret from the QR code (alternative to the PIN).
+    #[serde(default)]
+    token: String,
 }
 
 async fn join(
@@ -248,6 +281,9 @@ async fn join(
 ) -> Response {
     let ip = addr.ip();
     let now = Instant::now();
+    if !st.hub.is_live() {
+        return err(StatusCode::CONFLICT, "not casting");
+    }
     let mut s = st.sessions.lock().unwrap();
 
     if let Some((n, since)) = s.fails.get(&ip).copied() {
@@ -258,19 +294,33 @@ async fn join(
             s.fails.remove(&ip);
         }
     }
-    if !ct_eq(body.pin.trim(), &s.pin) {
+    let ok = (!body.pin.is_empty() && ct_eq(body.pin.trim(), &s.pin))
+        || (!body.token.is_empty() && ct_eq(body.token.trim(), &s.qr_token));
+    if !ok {
         let e = s.fails.entry(ip).or_insert((0, now));
         e.0 += 1;
         e.1 = now;
+        s.global_fails.retain(|t| now.duration_since(*t) < GLOBAL_WINDOW);
+        s.global_fails.push(now);
+        if s.global_fails.len() >= GLOBAL_FAILS {
+            // Too many wrong guesses across the network: make the old PIN worthless.
+            ServerState::rotate_locked(&mut s);
+            drop(s);
+            st.hub.close_all();
+            if let Some(f) = st.on_pin_change.get() {
+                f();
+            }
+            return err(StatusCode::TOO_MANY_REQUESTS, "too many attempts");
+        }
         return err(StatusCode::UNAUTHORIZED, "wrong PIN");
     }
     s.fails.remove(&ip);
-    s.tokens.retain(|_, t| now.duration_since(*t) < SESSION_TTL);
+    s.tokens.retain(|_, (t, _)| now.duration_since(*t) < SESSION_TTL);
     if s.tokens.len() >= MAX_VIEWERS * 4 {
         return err(StatusCode::SERVICE_UNAVAILABLE, "too many sessions");
     }
     let token = random_hex(32);
-    s.tokens.insert(token.clone(), now);
+    s.tokens.insert(token.clone(), (now, ip));
     drop(s);
 
     let mut r = Json(json!({ "ok": true })).into_response();
@@ -279,16 +329,25 @@ async fn join(
     r
 }
 
-async fn me(State(st): State<Arc<ServerState>>, headers: HeaderMap) -> Response {
-    match st.valid_token(&headers) {
+async fn me(
+    State(st): State<Arc<ServerState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Response {
+    match st.valid_token(&headers, addr.ip()) {
         Some(_) => Json(json!({ "ok": true })).into_response(),
         None => err(StatusCode::UNAUTHORIZED, "not joined"),
     }
 }
 
 /// WHEP-style: viewer POSTs its SDP offer, gets the SDP answer back.
-async fn watch(State(st): State<Arc<ServerState>>, headers: HeaderMap, body: Bytes) -> Response {
-    let Some(token) = st.valid_token(&headers) else {
+async fn watch(
+    State(st): State<Arc<ServerState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let Some(token) = st.valid_token(&headers, addr.ip()) else {
         return err(StatusCode::UNAUTHORIZED, "not joined");
     };
     if !st.hub.is_live() {
@@ -300,10 +359,7 @@ async fn watch(State(st): State<Arc<ServerState>>, headers: HeaderMap, body: Byt
     if !offer.starts_with("v=0") {
         return err(StatusCode::BAD_REQUEST, "bad sdp");
     }
-    if st.hub.viewer_count() >= MAX_VIEWERS && !st.hub.has_viewer(&token) {
-        return err(StatusCode::SERVICE_UNAVAILABLE, "too many viewers");
-    }
-    match st.hub.answer(token, offer.to_string()).await {
+    match st.hub.answer(token, offer.to_string(), MAX_VIEWERS).await {
         Ok(answer) => {
             let mut r = answer.into_response();
             r.headers_mut()
@@ -336,5 +392,30 @@ pub async fn run(state: Arc<ServerState>) {
             return;
         }
     };
-    let _ = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await;
+    // Own accept loop: LAN check at accept time, a connection cap, and a header-read timeout
+    // (slow-loris protection), which axum::serve doesn't provide.
+    let slots = Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS));
+    loop {
+        let Ok((stream, peer)) = listener.accept().await else {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            continue;
+        };
+        if !is_lan(peer.ip()) {
+            continue;
+        }
+        let Ok(permit) = slots.clone().try_acquire_owned() else { continue };
+        let svc = app.clone().layer(axum::Extension(ConnectInfo(peer)));
+        tokio::spawn(async move {
+            let _permit = permit;
+            let service = hyper::service::service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
+                let mut svc = svc.clone();
+                async move { tower_service::Service::call(&mut svc, req.map(axum::body::Body::new)).await }
+            });
+            let _ = hyper::server::conn::http1::Builder::new()
+                .timer(hyper_util::rt::TokioTimer::new())
+                .header_read_timeout(Duration::from_secs(10))
+                .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
+                .await;
+        });
+    }
 }

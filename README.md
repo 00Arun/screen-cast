@@ -48,7 +48,7 @@ viewing device: any modern browser works (iPhone, Android, smart TV browser, ano
 | 📡 **Cast to any browser** | Phones, tablets, TVs and laptops on the same Wi-Fi, with several viewers at once |
 | 🔑 **PIN + QR code** | 6-digit PIN with brute-force lock-out. Scan the QR code to start watching instantly |
 | 🎬 **True fullscreen** | The player's fullscreen button fills the screen with only the movie (no site header or app toolbar), on the computer and on viewers |
-| 🔊 **Sound included** | macOS casts only the browser's sound. Other apps are excluded |
+| 🔊 **Sound included** | Only Screen Cast's own sound is cast. Calls, music and notifications from other apps are not |
 | ⚡ **Smooth playback** | Hardware H.264 on macOS, instant recovery from Wi-Fi packet loss, playout buffer on viewers |
 | 🖥 **Cross-platform** | macOS (`.dmg`), Windows (`.exe` / `.msi`), Linux (`.deb` / `.AppImage`) |
 
@@ -103,7 +103,7 @@ Go to **[Releases](../../releases/latest)** and download the file for your syste
 | System | File | Requirements |
 |---|---|---|
 | macOS (Apple Silicon) | `ScreenCast-<version>.dmg` | macOS 14 Sonoma or newer |
-| Windows | `Screen Cast_<version>_x64-setup.exe` or `.msi` | Windows 10 (1903+) or 11 |
+| Windows | `Screen Cast_<version>_x64-setup.exe` or `.msi` | Windows 10 (2004+) or 11 |
 | Linux | `screen-cast_<version>_amd64.deb` or `.AppImage` | X11 or Wayland (via XWayland), PulseAudio or PipeWire |
 
 ## Install
@@ -129,7 +129,7 @@ sudo apt install ./screen-cast_<version>_amd64.deb     # Debian / Ubuntu
 # or
 chmod +x Screen.Cast_<version>_amd64.AppImage && ./Screen.Cast_<version>_amd64.AppImage
 ```
-Installing `bubblewrap` (included as a `.deb` dependency) makes WebKit run websites in an extra sandbox.
+`bubblewrap` (a `.deb` dependency) runs websites in WebKit's extra sandbox. `pulseaudio-utils` provides per-app audio capture.
 
 ## How to use
 
@@ -168,10 +168,11 @@ Installing `bubblewrap` (included as a `.deb` dependency) makes WebKit run websi
 | **No pop-ups** | `window.open`, `target=_blank` pop-ups and pop-unders are denied. A same-site link opens in place. |
 | **No app-launching links** | Only `http`, `https`, `blob` and `about:blank` can load. `file:`, `data:`, `mailto:`, `itms-apps:`, `facetime:` and custom app schemes are blocked. |
 | **Ad, tracker and malware blocking** | EasyList, EasyPrivacy and uBlock Origin *badware* are enforced twice: by Brave's adblock engine on every page and iframe navigation, and natively inside the engine for every script, image, iframe and request (WebKit content rules, or WebView2 request filtering). |
-| **No local-network access** | Websites can't reach `localhost`, `10.x`, `172.16–31.x`, `192.168.x`, `169.254.x`, IPv6 local addresses or `.local` hosts. This protects your router, NAS and the cast server itself. |
-| **Scam and abuse APIs removed** | Before any page script runs, Screen Cast disables `alert`/`confirm`/`prompt` (fake virus warnings), leave-page traps, clipboard hijacking, camera/microphone/location/screen requests, notifications, service workers, file pickers and protocol handlers. |
-| **Trusted UI is isolated** | Only the local toolbar, QR and About windows can call app commands, each with an explicit allow-list. The website has no IPC access at all. |
-| **Fullscreen can't be abused** | Only iframes that the page marked `allowfullscreen` can go fullscreen. <kbd>Esc</kbd> or the window controls always exit. |
+| **No local-network access** | All website traffic goes through a built-in filtering proxy that resolves DNS itself and refuses any destination whose **resolved** address is local: loopback, `10.x`, `172.16–31.x`, `192.168.x`, link-local, CGNAT `100.64/10`, IPv6 local and similar. It then connects to exactly the address it checked. This defeats tricks like `127.0.0.1.nip.io`, `localhost.` and DNS rebinding, and protects your router, NAS, local dev servers and the cast server itself. WebRTC is disabled for websites so it can't bypass the proxy. |
+| **Scam and abuse APIs removed** | Before any page script runs, Screen Cast disables `alert`/`confirm`/`prompt` (fake virus warnings), leave-page traps, clipboard hijacking (including `copy`-event tampering), camera/microphone/location/screen requests, notifications, service workers, file pickers and protocol handlers. They are locked on the prototypes too, so they can't be reached another way. |
+| **Trusted UI is isolated** | Only the local toolbar, QR and About webviews can call app commands, each with its own explicit allow-list. The website has no IPC access at all. Back/forward use the engine's native API, so a page can't hijack them. |
+| **Fullscreen can't be abused** | Fullscreen needs a real click or tap, only iframes marked `allowfullscreen` qualify, and switching is rate-limited. The page can't fake its fullscreen state. After you leave with <kbd>Esc</kbd> or the window controls, the page can't pull you back in. |
+| **No external apps** | On Windows, iframes get the same scheme policy as the page, and every attempt to launch another app (`ms-msdt:`, `search-ms:`, `mailto:`…) is cancelled. |
 
 ### What protects viewers
 
@@ -183,34 +184,50 @@ Installing `bubblewrap` (included as a `.deb` dependency) makes WebKit run websi
 
 ### What protects the cast itself
 
-- **PIN** required. After 5 wrong tries a device is locked out for 5 minutes. PINs and session
-  tokens are compared in constant time.
-- **Sessions** use random 256-bit tokens in `HttpOnly`, `SameSite=Strict` cookies.
-- **LAN only.** Connections from non-private addresses are refused.
+- **A fresh PIN for every cast**, and joining is only possible while casting. After 5 wrong
+  tries a device is locked out for 5 minutes. After 20 wrong tries from anywhere on the
+  network, the PIN changes automatically, so spreading guesses over many addresses doesn't
+  help. PINs and tokens are compared in constant time.
+- **Sessions** use random 256-bit tokens in `HttpOnly`, `SameSite=Strict` cookies. They only
+  work from the device's own IP address, and they end when the cast stops.
+- **LAN only.** Non-private addresses are refused when the connection is accepted. There is
+  also a connection cap and a header-read timeout against slow-loris attacks.
 - **Host header allow-list** blocks DNS-rebinding attacks, and the **Origin check** on every
   POST blocks cross-site requests from websites.
-- **Viewer cap** and request size limits. Signalling messages are strictly validated.
-- The **QR code** carries the PIN in the URL `#fragment`, which browsers never send over the
-  network. The viewer page removes it from the address bar and history straight away.
+- **Viewer cap**, enforced atomically, plus request size limits. Signalling messages are
+  strictly validated. Viewers still connecting when the PIN changes are dropped.
+- The **QR code** carries a long random secret, not the PIN, in the URL `#fragment`, which
+  browsers never send over the network. The viewer page removes it from the address bar
+  straight away, and it stops working when the PIN changes or a new cast starts.
+- While leaving fullscreen, the toolbar (which shows the PIN) appears only after the stream's
+  crop is updated, so the PIN never shows up on viewers' screens.
 
 ### Limits
 
 - No browser can promise complete protection against unknown engine exploits. Keep your OS
   updated, because engine security fixes ship with OS updates (WebKit on macOS) or
   automatically (WebView2 on Windows).
-- The local stream uses plain `http` for the viewer page. Media is always encrypted
-  (DTLS-SRTP), and the PIN protects access. Use it on networks you trust.
-- On Windows and Linux there is no whole-app OS sandbox (only the engine's), and **everything
-  your speakers play is cast**, so mute other apps while casting.
+- The viewer page and PIN exchange use plain `http` on your LAN, while media is always
+  encrypted (DTLS-SRTP). Someone who can intercept traffic on the same network (for example
+  open café Wi-Fi with an attacker doing ARP spoofing) could see the PIN or tamper with the
+  connection. Use it on networks you trust, like your home Wi-Fi.
+- On Windows and Linux there is no whole-app OS sandbox, only the engine's own.
+- macOS builds without an Apple Developer ID are ad-hoc signed. The Screen Recording
+  permission is tied to the bundle id so it survives updates, which means another local
+  program signed with the same id could match it. Build with
+  `SIGN_IDENTITY="Developer ID Application: …" scripts/build-dmg.sh` to tie it to your
+  certificate.
+- macOS casts all sound except that of other *apps*. Sounds from command-line tools or system
+  services may be included.
 
 ## Platform details
 
-| | macOS 14+ | Windows 10 (1903+) / 11 | Linux |
+| | macOS 14+ | Windows 10 (2004+) / 11 | Linux |
 |---|---|---|---|
 | Browser engine | WebKit | WebView2 (Chromium) | WebKitGTK 4.1 |
 | Own-window capture | ScreenCaptureKit | Windows.Graphics.Capture | X11 Composite (Wayland via XWayland) |
 | Video encoder | VideoToolbox (hardware, up to 1080p) | OpenH264 (software, up to 720p) | OpenH264 (software, up to 720p) |
-| Audio | Browser audio only | Everything the speakers play (WASAPI loopback) | Default output monitor (PulseAudio/PipeWire) |
+| Audio | Browser audio only (other apps excluded) | This app's process tree only (WASAPI process loopback, Windows 10 2004+) | This app's playback streams only (`parec --monitor-stream`, PulseAudio/PipeWire-Pulse) |
 | Native ad blocking | WebKit content rules | WebView2 request filter | WebKitGTK content filters |
 | Whole-app sandbox | ✅ App Sandbox | ❌ | ❌ (engine bubblewrap sandbox) |
 | Installer | `.dmg` | `.exe` (NSIS), `.msi` | `.deb`, `.AppImage` |
@@ -270,6 +287,8 @@ SC_BIND_IP=127.0.0.1 cargo run -- --selftest out.h264 # macOS: encoder → WebRT
 | No sound on the phone | Tap **🔊 Turn on sound** (browsers often start muted). Check the movie isn't muted on the computer. |
 | "Too many wrong tries" | Wait 5 minutes, or scan the QR code once the lock-out ends. |
 | Linux: casting doesn't start | Screen Cast needs X11 or XWayland. It sets `GDK_BACKEND=x11` automatically, so check that XWayland is installed. |
+| Linux: no sound | Install `pulseaudio-utils` (provides `pactl` and `parec`; it works with PipeWire too). |
+| Windows: no sound | Per-app audio capture needs Windows 10 version 2004 or newer. |
 | Video is choppy | Move closer to the router or use 5 GHz Wi-Fi. Fewer simultaneous viewers also helps. |
 
 ## Project layout
@@ -282,7 +301,8 @@ SC_BIND_IP=127.0.0.1 cargo run -- --selftest out.h264 # macOS: encoder → WebRT
 | `src-tauri/src/capture/` | Own-window capture: `macos.rs`, `windows.rs`, `linux.rs`, shared OpenH264 path `soft.rs` |
 | `src-tauri/src/encoder.rs`, `audio.rs` | VideoToolbox H.264 (macOS), Opus + resampling (all) |
 | `src-tauri/src/hub.rs` | WebRTC fan-out to viewers, key-frame on picture loss |
-| `src-tauri/src/server.rs` | LAN web server (PIN, sessions, security headers) |
+| `src-tauri/src/server.rs` | LAN web server (PIN, sessions, security headers, connection limits) |
+| `src-tauri/src/netguard.rs` | Filtering proxy: blocks website traffic to local/LAN addresses after DNS resolution |
 | `src-tauri/capabilities/` | Allow-lists of app commands per trusted window |
 | `src-tauri/filters/` | Bundled filter lists |
 | `ui/` | Toolbar, *Scan to watch* and About windows |

@@ -195,7 +195,7 @@ pub async fn run(out_path: String) -> Result<(), String> {
     let offer_sdp = pc.local_description().await.ok_or("no offer")?.sdp;
 
     let t0 = Instant::now();
-    let answer = hub.answer("selftest".into(), offer_sdp).await?;
+    let answer = hub.answer("selftest".into(), offer_sdp, 4).await?;
     println!("answer ready in {:?}, viewers = {}", t0.elapsed(), hub.viewer_count());
     pc.set_remote_description(RTCSessionDescription::answer(answer).map_err(e)?).await.map_err(e)?;
 

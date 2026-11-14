@@ -135,6 +135,9 @@ pub fn pcm_from_sample(sb: CFTypeRef) -> Option<Vec<f32>> {
             let frames = list.mBuffers[0].mDataByteSize as usize / 4;
             let ch = |i: usize| -> &[f32] {
                 let b = list.mBuffers[i.min(nbuf - 1)];
+                if b.mData.is_null() {
+                    return &[];
+                }
                 std::slice::from_raw_parts(b.mData as *const f32, b.mDataByteSize as usize / 4)
             };
             let (l, r) = (ch(0), ch(1));
@@ -145,6 +148,12 @@ pub fn pcm_from_sample(sb: CFTypeRef) -> Option<Vec<f32>> {
             }
         } else if nbuf > 0 {
             let b = list.mBuffers[0];
+            if b.mData.is_null() {
+                if !block.is_null() {
+                    CFRelease(block);
+                }
+                return None;
+            }
             let s = std::slice::from_raw_parts(b.mData as *const f32, b.mDataByteSize as usize / 4);
             let chans = (asbd.mChannelsPerFrame as usize).max(1);
             for frame in s.chunks(chans) {

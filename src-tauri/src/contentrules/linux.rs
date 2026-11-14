@@ -26,8 +26,13 @@ pub fn install(webview: &tauri::Webview) {
     let wv = webview.clone();
     std::thread::spawn(move || {
         let chunks = content_rule_chunks();
-        let dir = std::env::temp_dir().join(format!("screen-cast-filters-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
+        // Per-user private runtime dir (not a predictable path in shared /tmp).
+        let base = std::env::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from).unwrap_or_else(std::env::temp_dir);
+        let dir = base.join(format!("screen-cast-filters-{}", std::process::id()));
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            let _ = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir);
+        }
         let _ = wv.with_webview(move |pv| unsafe {
             let view = pv.inner();
             let Some(manager) = view.user_content_manager() else { return };

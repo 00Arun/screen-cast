@@ -1,5 +1,6 @@
 //! Windows: capture this app's own window with Windows.Graphics.Capture (Windows 10 1903+),
-//! crop to the browser area, encode with OpenH264; system audio via WASAPI loopback.
+//! crop to the browser area, encode with OpenH264; audio from this app's own process tree only
+//! (WASAPI process loopback, so other apps' sound is never cast).
 
 use std::{
     sync::{
@@ -9,7 +10,6 @@ use std::{
     time::Duration,
 };
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use windows::{
     core::{factory, Interface},
     Graphics::{
@@ -213,7 +213,7 @@ impl Capture {
         session.StartCapture().map_err(e)?;
 
         let audio_running = Arc::new(AtomicBool::new(true));
-        start_loopback_audio(hub, audio_running.clone());
+        start_process_audio(hub, audio_running.clone());
 
         Ok(Self { session, pool, pipeline, audio_running })
     }
@@ -226,37 +226,131 @@ impl Capture {
     }
 }
 
-/// WASAPI loopback of the default output device (what the speakers play). The stream lives
-/// on its own thread because cpal streams are not `Send` on every platform.
-fn start_loopback_audio(hub: Arc<Hub>, running: Arc<AtomicBool>) {
+/// Notifies when WASAPI finishes activating the process-loopback client.
+#[windows::core::implement(windows::Win32::Media::Audio::IActivateAudioInterfaceCompletionHandler)]
+struct Activated(std::sync::mpsc::Sender<()>);
+
+impl windows::Win32::Media::Audio::IActivateAudioInterfaceCompletionHandler_Impl for Activated_Impl {
+    fn ActivateCompleted(
+        &self,
+        _op: windows::core::Ref<windows::Win32::Media::Audio::IActivateAudioInterfaceAsyncOperation>,
+    ) -> windows::core::Result<()> {
+        let _ = self.0.send(());
+        Ok(())
+    }
+}
+
+/// Audio client that records only this process and its children (the WebView2 browser and
+/// its audio service): what the movie plays, never other apps. Windows 10 2004+.
+fn process_loopback_client() -> windows::core::Result<windows::Win32::Media::Audio::IAudioClient> {
+    use std::mem::ManuallyDrop;
+    use windows::Win32::{
+        Media::Audio::*,
+        System::{Com::StructuredStorage::PROPVARIANT, Variant::VT_BLOB},
+    };
+    let mut params = AUDIOCLIENT_ACTIVATION_PARAMS {
+        ActivationType: AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK,
+        Anonymous: AUDIOCLIENT_ACTIVATION_PARAMS_0 {
+            ProcessLoopbackParams: AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS {
+                TargetProcessId: std::process::id(),
+                ProcessLoopbackMode: PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE,
+            },
+        },
+    };
+    // The PROPVARIANT only borrows `params`; never let PropVariantClear free it.
+    let mut pv = ManuallyDrop::new(PROPVARIANT::default());
+    unsafe {
+        let inner = &mut pv.Anonymous.Anonymous;
+        inner.vt = VT_BLOB;
+        inner.Anonymous.blob.cbSize = std::mem::size_of::<AUDIOCLIENT_ACTIVATION_PARAMS>() as u32;
+        inner.Anonymous.blob.pBlobData = &mut params as *mut _ as *mut u8;
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let handler: IActivateAudioInterfaceCompletionHandler = Activated(tx).into();
+    let op = unsafe {
+        ActivateAudioInterfaceAsync(
+            VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK,
+            &IAudioClient::IID,
+            Some(&*pv as *const PROPVARIANT),
+            &handler,
+        )?
+    };
+    rx.recv_timeout(Duration::from_secs(5))
+        .map_err(|_| windows::core::Error::from(windows::Win32::Foundation::E_FAIL))?;
+    let mut hr = windows::core::HRESULT(0);
+    let mut unknown = None;
+    unsafe { op.GetActivateResult(&mut hr, &mut unknown)? };
+    hr.ok()?;
+    unknown.ok_or_else(|| windows::core::Error::from(windows::Win32::Foundation::E_FAIL))?.cast()
+}
+
+fn start_process_audio(hub: Arc<Hub>, running: Arc<AtomicBool>) {
     std::thread::spawn(move || {
+        use windows::Win32::{
+            Media::Audio::*,
+            System::Com::{CoInitializeEx, COINIT_MULTITHREADED},
+        };
         let result = (|| -> Result<(), String> {
-            let host = cpal::default_host();
-            let device = host.default_output_device().ok_or("no audio output device")?;
-            let config = device.default_output_config().map_err(|e| e.to_string())?;
-            if config.sample_format() != cpal::SampleFormat::F32 {
-                return Err(format!("unsupported audio format {:?}", config.sample_format()));
+            unsafe {
+                let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
             }
-            let channels = config.channels() as usize;
-            let rate = config.sample_rate().0;
+            let client = process_loopback_client().map_err(|e| format!("process loopback unavailable: {e}"))?;
+            // Process loopback has no mix format; ask for 48 kHz float stereo directly.
+            let format = WAVEFORMATEX {
+                wFormatTag: 3, // WAVE_FORMAT_IEEE_FLOAT
+                nChannels: 2,
+                nSamplesPerSec: 48_000,
+                nAvgBytesPerSec: 48_000 * 8,
+                nBlockAlign: 8,
+                wBitsPerSample: 32,
+                cbSize: 0,
+            };
+            let capture: IAudioCaptureClient = unsafe {
+                client
+                    .Initialize(
+                        AUDCLNT_SHAREMODE_SHARED,
+                        AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
+                        200_000, // 20 ms buffer (100 ns units)
+                        0,
+                        &format,
+                        None,
+                    )
+                    .map_err(|e| e.to_string())?;
+                client.GetService().map_err(|e| e.to_string())?
+            };
             let mut sink = AudioSink::new(hub)?;
-            // Using an *output* device as input makes cpal open a WASAPI loopback stream.
-            let stream = device
-                .build_input_stream(
-                    &config.config(),
-                    move |data: &[f32], _| sink.push(data, channels, rate),
-                    |err| eprintln!("audio loopback: {err}"),
-                    None,
-                )
-                .map_err(|e| e.to_string())?;
-            stream.play().map_err(|e| e.to_string())?;
+            unsafe { client.Start().map_err(|e| e.to_string())? };
+            let mut silence = Vec::new();
             while running.load(Ordering::Relaxed) {
-                std::thread::sleep(Duration::from_millis(100));
+                std::thread::sleep(Duration::from_millis(10));
+                loop {
+                    let size = unsafe { capture.GetNextPacketSize() }.map_err(|e| e.to_string())?;
+                    if size == 0 {
+                        break;
+                    }
+                    let mut data = std::ptr::null_mut();
+                    let mut frames = 0u32;
+                    let mut flags = 0u32;
+                    unsafe { capture.GetBuffer(&mut data, &mut frames, &mut flags, None, None) }
+                        .map_err(|e| e.to_string())?;
+                    let n = frames as usize * 2;
+                    if flags & (AUDCLNT_BUFFERFLAGS_SILENT.0 as u32) != 0 || data.is_null() {
+                        silence.resize(n, 0.0f32);
+                        sink.push(&silence, 2, 48_000);
+                    } else {
+                        let pcm = unsafe { std::slice::from_raw_parts(data as *const f32, n) };
+                        sink.push(pcm, 2, 48_000);
+                    }
+                    unsafe { capture.ReleaseBuffer(frames) }.map_err(|e| e.to_string())?;
+                }
             }
-            drop(stream);
+            unsafe {
+                let _ = client.Stop();
+            }
             Ok(())
         })();
         if let Err(e) = result {
+            // No fallback to whole-system audio: that would cast other apps' sound.
             eprintln!("audio capture disabled: {e}");
         }
     });

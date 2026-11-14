@@ -1,13 +1,13 @@
 [package]
 name = "screen_cast"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["unstable"] }
+tauri = { version = "2", features = ["unstable", "macos-proxy"] }
 axum = "0.7"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
 serde = { version = "1", features = ["derive"] }
@@ -16,6 +16,9 @@ rand = "0.8"
 qrcodegen = "1.8"
 url = "2"
 bytes = "1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tower-service = "0.3"
 webrtc = "0.21"
 rtc = "0.21"
 async-trait = "0.1"
@@ -33,7 +36,6 @@ objc2-web-kit = "0.3"
 
 # Windows: Windows.Graphics.Capture + OpenH264 + WASAPI loopback + WebView2 request filter
 [target.'cfg(windows)'.dependencies]
-cpal = "0.16"
 webview2-com = "0.39"
 windows-core = "0.62"
 windows = { version = "0.62", features = [
@@ -54,14 +56,15 @@ windows = { version = "0.62", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
+    "Win32_Media_Audio",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
 ] }
 
 # Linux: X11 window capture + OpenH264 + PulseAudio/PipeWire monitor + WebKitGTK content filters
 [target.'cfg(target_os = "linux")'.dependencies]
 gdkx11 = "0.18"
 x11rb = { version = "0.13", features = ["composite"] }
-libpulse-binding = "2"
-libpulse-simple-binding = "2"
 webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
 webkit2gtk-sys = "=2.0.2"
 glib-sys = "0.18"

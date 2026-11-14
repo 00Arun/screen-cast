@@ -2,12 +2,12 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "qr",
   "description": "The local QR window may only read the cast link.",
-  "windows": [
-    "qr"
-  ],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "allow-qr-info"
+  ],
+  "webviews": [
+    "qr"
   ]
 }

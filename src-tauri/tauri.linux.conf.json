@@ -7,7 +7,7 @@
     "shortDescription": "Sandboxed browser that casts to your devices",
     "linux": {
       "deb": {
-        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0", "libpulse0", "bubblewrap"]
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0", "pulseaudio-utils", "bubblewrap"]
       }
     }
   }

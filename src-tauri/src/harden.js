@@ -30,6 +30,25 @@
     return realAdd.call(this, type, ...rest);
   });
 
+  // Lock on the prototypes too, so `Proto.method.call(obj)` can't reach the original.
+  const lockProto = (ctor, names, value) => {
+    if (!ctor || !ctor.prototype) return;
+    for (const n of names) lock(ctor.prototype, n, value);
+  };
+  lockProto(window.MediaDevices, ['getUserMedia', 'getDisplayMedia'], deny);
+  lockProto(window.MediaDevices, ['enumerateDevices'], () => Promise.resolve([]));
+  lockProto(window.Clipboard, ['writeText', 'write', 'readText', 'read'], deny);
+  lockProto(window.ServiceWorkerContainer, ['register'], deny);
+  lockProto(window.Geolocation, ['getCurrentPosition', 'watchPosition'], (_ok, err) => { err && err({ code: 1, message: 'Blocked' }); return 0; });
+  // Copy/cut handlers can't replace what you copied (no clipboardData for page scripts).
+  try {
+    Object.defineProperty(ClipboardEvent.prototype, 'clipboardData', { get: () => null, configurable: false });
+  } catch (_) {}
+  // WebRTC would let pages open network connections that bypass the filtering proxy.
+  for (const n of ['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel', 'RTCIceCandidate']) {
+    lock(window, n, function () { throw new DOMException('Blocked by Screen Cast sandbox', 'NotAllowedError'); });
+  }
+
   // Hardware / personal data access.
   const nav = window.navigator;
   if (nav.mediaDevices) {
@@ -99,9 +118,14 @@
     transform: 'none', filter: 'none', perspective: 'none', contain: 'none', 'will-change': 'auto',
     'backdrop-filter': 'none', 'clip-path': 'none', overflow: 'visible', 'z-index': '2147483647',
   };
-  const enterFs = (el) => {
+  const hasClick = () => !navigator.userActivation || navigator.userActivation.isActive;
+  const enterFs = (el, fromChild) => {
     if (!(el instanceof Element)) return Promise.reject(new TypeError('not an element'));
     if (fsEl === el) return Promise.resolve();
+    // Like real browsers: fullscreen only right after a user click/tap/keypress.
+    if (!fromChild && !hasClick()) {
+      return Promise.reject(new DOMException('Fullscreen needs a user gesture', 'NotAllowedError'));
+    }
     if (fsEl) exitFs(false);
     fsEl = el;
     fsSaved = [];
@@ -155,7 +179,9 @@
     // Only frames the page explicitly allowed to go fullscreen (video players do; ads don't).
     const allowed = frame.hasAttribute('allowfullscreen') || frame.hasAttribute('webkitallowfullscreen')
       || /(^|;)\s*fullscreen/.test(frame.getAttribute('allow') || '');
-    if (d.__scFs && allowed) enterFs(frame);
+    // The click happened inside the child frame; user activation also propagates to
+    // ancestors, so require it here as well.
+    if (d.__scFs && allowed && hasClick()) enterFs(frame, true);
     else if (fsEl === frame) exitFs(true);
   });
   document.addEventListener('keydown', (e) => {
@@ -178,6 +204,9 @@
   };
   for (const n of ['fullscreenElement', 'webkitFullscreenElement', 'webkitCurrentFullScreenElement']) {
     getter(Document.prototype, n, () => fsEl);
+    // Also on this document itself: the app reads document.fullscreenElement, and a page
+    // must not be able to fake it with an own property.
+    getter(document, n, () => fsEl);
   }
   for (const n of ['fullscreenEnabled', 'webkitFullscreenEnabled', 'webkitFullScreenKeyboardInputAllowed']) {
     getter(Document.prototype, n, () => true);

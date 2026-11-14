@@ -1,6 +1,7 @@
 //! Linux: capture this app's own X11 window (the app forces GDK's X11 backend, so this also
 //! works on Wayland desktops through XWayland), crop to the browser area, encode with
-//! OpenH264; audio from the PulseAudio / PipeWire monitor of the default output.
+//! OpenH264; audio only from this app's own playback streams (PulseAudio / PipeWire-Pulse
+//! per-stream monitor), never other apps.
 
 use std::{
     sync::{
@@ -67,7 +68,7 @@ impl Capture {
             });
         }
 
-        start_monitor_audio(hub, running.clone());
+        start_app_audio(hub, running.clone());
         Ok(Self { pipeline, running })
     }
 
@@ -95,40 +96,117 @@ fn grab(conn: &impl Connection, xid: u32) -> Result<(Vec<u8>, usize, usize), Str
     Ok((image.data, w, h))
 }
 
-/// Records what the speakers play (default sink monitor) via PulseAudio or PipeWire-Pulse.
-fn start_monitor_audio(hub: Arc<Hub>, running: Arc<AtomicBool>) {
-    std::thread::spawn(move || {
-        use libpulse_binding::{sample::{Format, Spec}, stream::Direction};
-        use libpulse_simple_binding::Simple;
+/// `true` if `pid` is this process or one of its descendants (WebKit's web/GPU processes).
+fn in_our_tree(pid: u32) -> bool {
+    let me = std::process::id();
+    let mut p = pid;
+    for _ in 0..32 {
+        if p == me {
+            return true;
+        }
+        if p <= 1 {
+            return false;
+        }
+        let Ok(stat) = std::fs::read_to_string(format!("/proc/{p}/stat")) else { return false };
+        // Fields after the ")" of the command name: state ppid ...
+        let Some(rest) = stat.rsplit_once(')').map(|(_, r)| r) else { return false };
+        let Some(ppid) = rest.split_whitespace().nth(1).and_then(|v| v.parse().ok()) else { return false };
+        p = ppid;
+    }
+    false
+}
 
-        let spec = Spec { format: Format::F32le, channels: 2, rate: 48_000 };
-        let simple = match Simple::new(
-            None,
-            "Screen Cast",
-            Direction::Record,
-            Some("@DEFAULT_MONITOR@"),
-            "cast audio",
-            &spec,
-            None,
-            None,
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("audio capture disabled: {e}");
-                return;
-            }
-        };
+/// Newest playback stream ("sink input") that belongs to this app, from `pactl`.
+fn our_sink_input() -> Option<u32> {
+    let out = std::process::Command::new("pactl").args(["list", "sink-inputs"]).output().ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut best = None;
+    for block in text.split("Sink Input #").skip(1) {
+        let Some(index) = block.lines().next().and_then(|l| l.trim().parse::<u32>().ok()) else { continue };
+        let ours = block.lines().any(|l| {
+            let l = l.trim();
+            ["application.process.id = ", "pipewire.sec.pid = "].iter().any(|key| {
+                l.strip_prefix(key)
+                    .and_then(|v| v.trim_matches('"').parse::<u32>().ok())
+                    .is_some_and(in_our_tree)
+            })
+        });
+        if ours {
+            best = Some(best.map_or(index, |b: u32| b.max(index)));
+        }
+    }
+    best
+}
+
+/// Records only this app's playback streams with `parec --monitor-stream`, so other apps'
+/// sound (calls, music, notifications) is never cast. Follows new streams as they appear.
+fn start_app_audio(hub: Arc<Hub>, running: Arc<AtomicBool>) {
+    use std::io::Read;
+    use std::process::{Child, Command, Stdio};
+    use std::sync::mpsc;
+
+    std::thread::spawn(move || {
         let Ok(mut sink) = AudioSink::new(hub) else { return };
-        let mut bytes = vec![0u8; 960 * 2 * 4]; // 20 ms
-        let mut samples = vec![0f32; 960 * 2];
+        let mut current: Option<(u32, Child)> = None;
+        let (tx, rx) = mpsc::channel::<(u32, Vec<f32>)>();
+        let mut last_scan = Instant::now() - Duration::from_secs(10);
         while running.load(Ordering::Relaxed) {
-            if simple.read(&mut bytes).is_err() {
-                break;
+            if last_scan.elapsed() > Duration::from_secs(1) {
+                last_scan = Instant::now();
+                let wanted = our_sink_input();
+                if wanted != current.as_ref().map(|(i, _)| *i) {
+                    if let Some((_, mut child)) = current.take() {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                    }
+                    if let Some(index) = wanted {
+                        let spawned = Command::new("parec")
+                            .args([
+                                &format!("--monitor-stream={index}"),
+                                "--raw",
+                                "--format=float32le",
+                                "--rate=48000",
+                                "--channels=2",
+                                "--latency-msec=20",
+                            ])
+                            .stdout(Stdio::piped())
+                            .stderr(Stdio::null())
+                            .spawn();
+                        match spawned {
+                            Ok(mut child) => {
+                                if let Some(mut out) = child.stdout.take() {
+                                    let tx = tx.clone();
+                                    std::thread::spawn(move || {
+                                        let mut buf = vec![0u8; 960 * 2 * 4];
+                                        while let Ok(n) = out.read(&mut buf) {
+                                            if n == 0 {
+                                                break;
+                                            }
+                                            let pcm = buf[..n - n % 4]
+                                                .chunks_exact(4)
+                                                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                                                .collect();
+                                            if tx.send((index, pcm)).is_err() {
+                                                break;
+                                            }
+                                        }
+                                    });
+                                }
+                                current = Some((index, child));
+                            }
+                            Err(e) => eprintln!("audio capture needs parec (pulseaudio-utils): {e}"),
+                        }
+                    }
+                }
             }
-            for (i, c) in bytes.chunks_exact(4).enumerate() {
-                samples[i] = f32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+            match rx.recv_timeout(Duration::from_millis(200)) {
+                Ok((index, pcm)) if current.as_ref().is_some_and(|(i, _)| *i == index) => sink.push(&pcm, 2, 48_000),
+                _ => {}
             }
-            sink.push(&samples, 2, 48_000);
+        }
+        if let Some((_, mut child)) = current.take() {
+            let _ = child.kill();
+            let _ = child.wait();
         }
     });
 }

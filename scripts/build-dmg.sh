@@ -15,14 +15,14 @@ export MACOSX_DEPLOYMENT_TARGET=14.0
 cd "$TAURI"
 if [[ "${UNIVERSAL:-0}" == "1" ]]; then
   rustup target add aarch64-apple-darwin x86_64-apple-darwin >/dev/null
-  cargo build --release --target aarch64-apple-darwin
-  cargo build --release --target x86_64-apple-darwin
+  cargo build --release --locked --target aarch64-apple-darwin
+  cargo build --release --locked --target x86_64-apple-darwin
   BIN="$OUT/screen_cast"
   mkdir -p "$OUT"
   lipo -create -output "$BIN" \
     target/aarch64-apple-darwin/release/screen_cast target/x86_64-apple-darwin/release/screen_cast
 else
-  cargo build --release
+  cargo build --release --locked
   BIN="$TAURI/target/release/screen_cast"
 fi
 
@@ -33,11 +33,21 @@ cp "$TAURI/icons/icon.icns" "$APP/Contents/Resources/icon.icns"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # Ad-hoc signature with the App Sandbox entitlements (hardened runtime on).
-# The designated requirement is pinned to the bundle id so macOS keeps the Screen Recording
-# permission across app updates (ad-hoc signatures otherwise change identity every build).
-codesign --force --deep --options runtime --sign - \
-  --requirements '=designated => identifier "app.screencast.sandbox"' \
-  --entitlements "$TAURI/macos/entitlements.plist" "$APP"
+# Signing:
+#  - SIGN_IDENTITY="Developer ID Application: ..." (or any code-signing certificate in your
+#    keychain): the app's identity is tied to that certificate, so the Screen Recording
+#    permission survives updates AND no other app can claim it. Recommended for distribution.
+#  - Default (no certificate): ad-hoc signature whose designated requirement is pinned to the
+#    bundle id, so the permission survives updates. Trade-off: another local program signed
+#    with the same identifier could match that permission.
+if [[ -n "${SIGN_IDENTITY:-}" ]]; then
+  codesign --force --deep --options runtime --timestamp --sign "$SIGN_IDENTITY" \
+    --entitlements "$TAURI/macos/entitlements.plist" "$APP"
+else
+  codesign --force --deep --options runtime --sign - \
+    --requirements '=designated => identifier "app.screencast.sandbox"' \
+    --entitlements "$TAURI/macos/entitlements.plist" "$APP"
+fi
 codesign --verify --strict --verbose=2 "$APP"
 codesign -d --entitlements - "$APP" 2>/dev/null | grep -q app-sandbox && echo "✓ App Sandbox enabled"
 
