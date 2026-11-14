@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scan to watch</title>
+<link rel="stylesheet" href="qr.css">
+</head>
+<body>
+  <main>
+    <h1>Scan to watch</h1>
+    <p class="muted">Open your phone camera and point it at the code. Same Wi-Fi only.</p>
+    <div id="qr" class="qr" aria-label="QR code"></div>
+    <p class="link"><span id="url">…</span></p>
+    <p class="pin">PIN <b id="pin">······</b></p>
+    <p class="muted small" id="viewers"></p>
+    <p id="err" class="err"></p>
+  </main>
+  <script src="qr.js"></script>
+</body>
+</html>

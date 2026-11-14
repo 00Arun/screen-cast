@@ -1,0 +1,26 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Screen Cast",
+  "version": "1.0.0",
+  "identifier": "app.screencast.sandbox",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": [
+      "icons/icon.png"
+    ],
+    "copyright": "\u00a9 2026 Arun Pandey \u00b7 Arun AI Studio",
+    "publisher": "Arun AI Studio",
+    "homepage": "https://arun-pandey.com.np/",
+    "shortDescription": "Sandboxed browser that casts to your devices"
+  }
+}

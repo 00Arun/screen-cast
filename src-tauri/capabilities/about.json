@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "about",
+  "description": "The local About window: version info and opening the developer site in the sandboxed browser.",
+  "windows": [
+    "about"
+  ],
+  "permissions": [
+    "allow-about-info",
+    "allow-open-developer-site"
+  ]
+}

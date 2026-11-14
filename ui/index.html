@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toolbar</title>
+<link rel="stylesheet" href="toolbar.css">
+</head>
+<body>
+  <div class="bar" data-tauri-drag-region>
+    <button id="back" title="Back">‹</button>
+    <button id="fwd" title="Forward">›</button>
+    <button id="reload" title="Reload">↻</button>
+    <form id="nav" autocomplete="off">
+      <span id="lock" title="Sandboxed: downloads, popups and permissions are blocked">🛡</span>
+      <input id="url" spellcheck="false" placeholder="Search or enter website address">
+    </form>
+    <span id="blocked" class="pill" title="Ads, trackers, popups and redirects blocked on this page">0 blocked</span>
+    <span id="castInfo" class="pill hidden"></span>
+    <button id="qrBtn" class="ghost hidden" title="Show QR code for phones">▦ QR</button>
+    <button id="pinBtn" class="ghost hidden" title="New PIN (disconnects everyone)">↺ PIN</button>
+    <button id="cast" class="cast">Cast</button>
+    <button id="about" class="ghost info" title="About Screen Cast">ⓘ</button>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+  <script src="toolbar.js"></script>
+</body>
+</html>

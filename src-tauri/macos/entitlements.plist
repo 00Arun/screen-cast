@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- macOS App Sandbox: no access to your files, camera, microphone, contacts, etc. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <!-- Load websites -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <!-- Serve the cast page / stream to devices on your local network -->
+    <key>com.apple.security.network.server</key>
+    <true/>
+</dict>
+</plist>

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-qr-info"
+description = "Enables the qr_info command without any pre-configured scope."
+commands.allow = ["qr_info"]
+
+[[permission]]
+identifier = "deny-qr-info"
+description = "Denies the qr_info command without any pre-configured scope."
+commands.deny = ["qr_info"]

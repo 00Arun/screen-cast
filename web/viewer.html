@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>Screen Cast</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body class="viewer">
+  <section id="join" class="card" hidden>
+    <h1>Screen Cast</h1>
+    <p class="muted">Enter the 6-digit PIN shown in the Screen Cast app, or scan its QR code.</p>
+    <form id="joinForm" autocomplete="off">
+      <input id="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="••••••" required autofocus>
+      <button type="submit">Watch</button>
+    </form>
+    <p id="joinMsg" class="msg" role="status"></p>
+  </section>
+
+  <section id="player" hidden>
+    <video id="video" playsinline autoplay muted disablepictureinpicture disableremoteplayback></video>
+    <button id="soundPrompt" type="button" hidden>🔊 Tap to turn on sound</button>
+    <div id="overlay">
+      <span id="status">Connecting…</span>
+      <div class="buttons">
+        <button id="unmute" type="button">🔊 Sound on</button>
+        <button id="fs" type="button">⛶ Fullscreen</button>
+      </div>
+    </div>
+  </section>
+  <script src="/viewer.js"></script>
+</body>
+</html>

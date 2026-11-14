@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleDisplayName</key><string>Screen Cast</string>
+    <key>CFBundleName</key><string>Screen Cast</string>
+    <key>CFBundleExecutable</key><string>screen_cast</string>
+    <key>CFBundleIdentifier</key><string>app.screencast.sandbox</string>
+    <key>CFBundleIconFile</key><string>icon</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>1.0.0</string>
+    <key>CFBundleVersion</key><string>1.0.0</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.entertainment</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 Arun Pandey · Arun AI Studio · arun-pandey.com.np</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Screen Cast streams the browser picture to your phone, TV or other devices on this Wi-Fi network.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Screen Cast captures only its own browser window to cast it to your other devices.</string>
+</dict>
+</plist>

@@ -1,0 +1,300 @@
+<p align="center">
+  <img src="src-tauri/icons/128x128@2x.png" width="112" alt="Screen Cast icon">
+</p>
+
+<h1 align="center">Screen Cast</h1>
+
+<p align="center">
+  <b>A sandboxed browser that casts what it shows to your phone, TV or laptop over Wi-Fi, with nothing from the website ever reaching them.</b><br>
+  macOS · Windows · Linux · Built with Rust + Tauri
+</p>
+
+<p align="center">
+  <a href="../../releases/latest"><b>⬇ Download the latest release</b></a> ·
+  <a href="#install">Install</a> ·
+  <a href="#how-to-use">How to use</a> ·
+  <a href="#security">Security</a> ·
+  <a href="#build-from-source">Build</a>
+</p>
+
+![Screen Cast casting a movie: toolbar with the cast address, PIN, viewer count and a blocked popup](docs/screenshots/app-casting.png)
+
+---
+
+## What it is
+
+Many free movie sites are full of pop-ups, redirects, fake "your computer is infected"
+alerts and forced downloads. Casting such a site from a normal browser exposes both your
+computer and every device you cast to.
+
+**Screen Cast** solves this with two ideas:
+
+1. **The website runs in a locked-down browser.** Ads, trackers and malware domains are
+   blocked. Downloads, pop-ups, links that open other apps, and access to your files, camera,
+   microphone and local network are all switched off. On macOS the whole app also runs inside
+   Apple's **App Sandbox**.
+2. **Viewers only get pixels and sound.** The app records its *own* browser area and streams
+   it as encrypted video (WebRTC). Phones and TVs never load the website, so there is nothing
+   on their side that an ad or script could run.
+
+Other devices open a link (or scan a QR code), and the movie plays. No app to install on the
+viewing device: any modern browser works (iPhone, Android, smart TV browser, another laptop).
+
+## Features
+
+| | |
+|---|---|
+| 🛡 **Sandboxed browsing** | Private mode, ad/tracker/malware blocking (EasyList, EasyPrivacy, uBlock Origin *badware*), no downloads, no pop-ups, no scam dialogs |
+| 📡 **Cast to any browser** | Phones, tablets, TVs and laptops on the same Wi-Fi, with several viewers at once |
+| 🔑 **PIN + QR code** | 6-digit PIN with brute-force lock-out. Scan the QR code to start watching instantly |
+| 🎬 **True fullscreen** | The player's fullscreen button fills the screen with only the movie (no site header or app toolbar), on the computer and on viewers |
+| 🔊 **Sound included** | macOS casts only the browser's sound. Other apps are excluded |
+| ⚡ **Smooth playback** | Hardware H.264 on macOS, instant recovery from Wi-Fi packet loss, playout buffer on viewers |
+| 🖥 **Cross-platform** | macOS (`.dmg`), Windows (`.exe` / `.msi`), Linux (`.deb` / `.AppImage`) |
+
+## Screenshots
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/app-idle.png" alt="Browsing before casting"><br><sub><b>Browsing.</b> The 🛡 shows the sandbox is active, and the counter shows what was blocked on this page.</sub></td>
+<td width="50%"><img src="docs/screenshots/app-casting.png" alt="Casting with address, PIN and viewer count"><br><sub><b>Casting.</b> The toolbar shows the address, the PIN and how many devices are watching. A blocked pop-up is reported.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/app-fullscreen.png" alt="Fullscreen movie with no toolbar"><br><sub><b>Fullscreen.</b> Only the movie is shown. The site header, menus and app toolbar are hidden. Press <kbd>Esc</kbd> to leave.</sub></td>
+<td align="center"><img src="docs/screenshots/qr-window.png" width="250" alt="Scan to watch QR window">&nbsp;&nbsp;<img src="docs/screenshots/about.png" width="250" alt="About window"><br><sub><b>Scan to watch</b> (opens when casting starts and is never part of the cast) and <b>About</b>.</sub></td>
+</tr>
+<tr>
+<td colspan="2" align="center"><img src="docs/screenshots/phones.png" width="820" alt="Viewer on a phone: PIN screen and playback"><br><sub><b>On the viewing device.</b> Enter the PIN or scan the QR code, then watch. Tap <i>Turn on sound</i> if the browser starts muted.</sub></td>
+</tr>
+</table>
+
+<sub>Screenshots show the real app UI with demo data (a demo movie page, address <code>192.168.1.20</code>, PIN <code>482913</code>).</sub>
+
+## How it works
+
+```mermaid
+flowchart LR
+  subgraph Computer["Your computer: Screen Cast app (macOS: App Sandbox)"]
+    T["Toolbar (trusted)<br/>address bar · Cast · PIN · QR"]
+    B["Sandboxed browser (untrusted website)<br/>ads/trackers blocked · no downloads<br/>no pop-ups · no LAN access"]
+    C["Capture: this window's browser area only"]
+    E["Encode: H.264 video + Opus audio"]
+    S["LAN server :8080<br/>PIN · sessions · strict CSP"]
+    B --> C --> E --> S
+  end
+  S -- "WebRTC (DTLS-SRTP encrypted)<br/>video + sound only" --> P["📱 Phone"]
+  S -- " " --> TV["📺 TV browser"]
+  S -- " " --> L["💻 Laptop"]
+```
+
+1. You browse in the sandboxed browser. A trusted toolbar controls it, and the website cannot
+   talk to the toolbar or the app.
+2. When you press **Cast**, the app captures **only its own window**, cropped to the browser
+   area. Other apps, notifications and your desktop are never captured.
+3. Video is encoded as H.264 (hardware VideoToolbox on macOS, OpenH264 on Windows/Linux) and
+   audio as Opus.
+4. A small built-in web server on port `8080` serves a tiny viewer page. After the PIN is
+   accepted, each viewer gets its own encrypted WebRTC connection that carries only media.
+
+## Download
+
+Go to **[Releases](../../releases/latest)** and download the file for your system:
+
+| System | File | Requirements |
+|---|---|---|
+| macOS (Apple Silicon) | `ScreenCast-<version>.dmg` | macOS 14 Sonoma or newer |
+| Windows | `Screen Cast_<version>_x64-setup.exe` or `.msi` | Windows 10 (1903+) or 11 |
+| Linux | `screen-cast_<version>_amd64.deb` or `.AppImage` | X11 or Wayland (via XWayland), PulseAudio or PipeWire |
+
+## Install
+
+### macOS
+1. Open the `.dmg` and drag **Screen Cast** onto **Applications**.
+2. The app is not notarized by Apple, so the first launch is blocked. Go to **System Settings →
+   Privacy & Security**, scroll down, and click **Open Anyway**. (Or run
+   `xattr -dr com.apple.quarantine "/Applications/Screen Cast.app"` in Terminal.)
+3. When you first press **Cast**, allow **Screen & System Audio Recording**, then quit and
+   reopen the app. The permission is kept across updates.
+4. Allow **Local Network** access when asked.
+
+### Windows
+1. Run the `-setup.exe` (or the `.msi`). If SmartScreen warns about an unknown publisher,
+   choose **More info → Run anyway**.
+2. When Windows Firewall asks, allow Screen Cast on **Private networks** so other devices can
+   connect.
+
+### Linux
+```bash
+sudo apt install ./screen-cast_<version>_amd64.deb     # Debian / Ubuntu
+# or
+chmod +x Screen.Cast_<version>_amd64.AppImage && ./Screen.Cast_<version>_amd64.AppImage
+```
+Installing `bubblewrap` (included as a `.deb` dependency) makes WebKit run websites in an extra sandbox.
+
+## How to use
+
+1. **Browse.** Type a site in the address bar and start the movie.
+2. **Cast.** Press **Cast**. A **Scan to watch** window opens with a QR code. The toolbar shows
+   the address (for example `http://192.168.1.20:8080`), the **PIN** and the number of viewers.
+3. **Watch on another device** on the same Wi-Fi:
+   - **Scan the QR code** with the phone camera and tap the link. Playback starts immediately.
+   - Or open the address in any browser and type the PIN.
+   - Tap **🔊 Turn on sound** if the browser started muted, and **⛶ Fullscreen** for full screen.
+4. **Fullscreen.** Press the player's own fullscreen button. The computer goes fullscreen with
+   only the movie, and viewers see only the movie. Press <kbd>Esc</kbd> to leave.
+5. **Control access.** **↺ PIN** creates a new PIN, disconnects everyone and invalidates the
+   old QR code. **● Stop** ends the cast.
+
+| Toolbar | |
+|---|---|
+| ‹ › ↻ | Back, forward, reload |
+| 🛡 + address bar | Enter a site or a search (DuckDuckGo) |
+| *N blocked* | Ads, pop-ups, redirects and downloads blocked on this page |
+| **Cast** / **● Stop** | Start or stop casting |
+| ▦ QR | Show the *Scan to watch* window |
+| ↺ PIN | New PIN, which disconnects all viewers |
+| ⓘ | About Screen Cast (version and developer) |
+
+## Security
+
+### What protects the computer running Screen Cast
+
+| Protection | Details |
+|---|---|
+| **App Sandbox** (macOS) | The app has no access to your files, Downloads, Desktop, camera, microphone or contacts. Its only entitlements are network client and server. |
+| **Engine sandbox** | Websites run in the engine's own sandboxed process: WebKit on macOS, WebView2 on Windows, WebKitGTK with bubblewrap on Linux. |
+| **Private mode** | Cookies, cache and storage are discarded when the app quits. |
+| **No downloads** | Every download is cancelled. `<a download>` and blob downloads are blocked too. |
+| **No pop-ups** | `window.open`, `target=_blank` pop-ups and pop-unders are denied. A same-site link opens in place. |
+| **No app-launching links** | Only `http`, `https`, `blob` and `about:blank` can load. `file:`, `data:`, `mailto:`, `itms-apps:`, `facetime:` and custom app schemes are blocked. |
+| **Ad, tracker and malware blocking** | EasyList, EasyPrivacy and uBlock Origin *badware* are enforced twice: by Brave's adblock engine on every page and iframe navigation, and natively inside the engine for every script, image, iframe and request (WebKit content rules, or WebView2 request filtering). |
+| **No local-network access** | Websites can't reach `localhost`, `10.x`, `172.16–31.x`, `192.168.x`, `169.254.x`, IPv6 local addresses or `.local` hosts. This protects your router, NAS and the cast server itself. |
+| **Scam and abuse APIs removed** | Before any page script runs, Screen Cast disables `alert`/`confirm`/`prompt` (fake virus warnings), leave-page traps, clipboard hijacking, camera/microphone/location/screen requests, notifications, service workers, file pickers and protocol handlers. |
+| **Trusted UI is isolated** | Only the local toolbar, QR and About windows can call app commands, each with an explicit allow-list. The website has no IPC access at all. |
+| **Fullscreen can't be abused** | Only iframes that the page marked `allowfullscreen` can go fullscreen. <kbd>Esc</kbd> or the window controls always exit. |
+
+### What protects viewers
+
+- They receive **only an encrypted WebRTC media stream**: no HTML, JavaScript, cookies, ads,
+  redirects or downloads from the website.
+- The viewer page is a small static page with a strict Content-Security-Policy (only its own
+  script, no frames, no third-party content) plus `X-Frame-Options`, `nosniff`,
+  `Referrer-Policy` and `Permissions-Policy` headers.
+
+### What protects the cast itself
+
+- **PIN** required. After 5 wrong tries a device is locked out for 5 minutes. PINs and session
+  tokens are compared in constant time.
+- **Sessions** use random 256-bit tokens in `HttpOnly`, `SameSite=Strict` cookies.
+- **LAN only.** Connections from non-private addresses are refused.
+- **Host header allow-list** blocks DNS-rebinding attacks, and the **Origin check** on every
+  POST blocks cross-site requests from websites.
+- **Viewer cap** and request size limits. Signalling messages are strictly validated.
+- The **QR code** carries the PIN in the URL `#fragment`, which browsers never send over the
+  network. The viewer page removes it from the address bar and history straight away.
+
+### Limits
+
+- No browser can promise complete protection against unknown engine exploits. Keep your OS
+  updated, because engine security fixes ship with OS updates (WebKit on macOS) or
+  automatically (WebView2 on Windows).
+- The local stream uses plain `http` for the viewer page. Media is always encrypted
+  (DTLS-SRTP), and the PIN protects access. Use it on networks you trust.
+- On Windows and Linux there is no whole-app OS sandbox (only the engine's), and **everything
+  your speakers play is cast**, so mute other apps while casting.
+
+## Platform details
+
+| | macOS 14+ | Windows 10 (1903+) / 11 | Linux |
+|---|---|---|---|
+| Browser engine | WebKit | WebView2 (Chromium) | WebKitGTK 4.1 |
+| Own-window capture | ScreenCaptureKit | Windows.Graphics.Capture | X11 Composite (Wayland via XWayland) |
+| Video encoder | VideoToolbox (hardware, up to 1080p) | OpenH264 (software, up to 720p) | OpenH264 (software, up to 720p) |
+| Audio | Browser audio only | Everything the speakers play (WASAPI loopback) | Default output monitor (PulseAudio/PipeWire) |
+| Native ad blocking | WebKit content rules | WebView2 request filter | WebKitGTK content filters |
+| Whole-app sandbox | ✅ App Sandbox | ❌ | ❌ (engine bubblewrap sandbox) |
+| Installer | `.dmg` | `.exe` (NSIS), `.msi` | `.deb`, `.AppImage` |
+
+## Build from source
+
+Every platform needs **Rust** (stable) and **CMake**. Each installer must be built on its own
+operating system.
+
+**Every build gets a new version automatically.** The version lives in [`VERSION`](VERSION),
+and each build script raises the patch number (1.0.1 → 1.0.2) and writes it into
+`Cargo.toml`, `tauri.conf.json` and the macOS `Info.plist`. Use `BUMP=minor` or `BUMP=major`
+to raise it more, or `NO_BUMP=1` to keep it. You can also run `scripts/bump-version.sh`
+directly.
+
+```bash
+# macOS (needs Xcode Command Line Tools): dist/ScreenCast-<version>.dmg
+scripts/build-dmg.sh                 # Apple Silicon
+UNIVERSAL=1 scripts/build-dmg.sh     # Apple Silicon + Intel
+
+# Linux (installs build dependencies with apt or dnf): src-tauri/target/release/bundle/{deb,appimage}/
+scripts/build-linux.sh
+```
+
+```powershell
+# Windows (needs Visual Studio 2022 Build Tools "Desktop development with C++", Rust and CMake;
+# see the top of the script): src-tauri\target\release\bundle\{nsis,msi}\
+powershell -ExecutionPolicy Bypass -File scripts\build-windows.ps1
+```
+
+### Publish a release (downloads on GitHub)
+
+Installers are published as **GitHub Releases** (not committed to git). With the
+[GitHub CLI](https://cli.github.com) logged in:
+
+```bash
+scripts/build-dmg.sh && scripts/publish-release.sh     # creates v<version> and uploads the .dmg
+# on Windows / Linux, after building, add their installers to the same release:
+gh release upload v<version> "<path to installer>" --clobber
+```
+
+### Tests
+
+```bash
+cd src-tauri
+cargo test                                            # ad blocking, URL policy, QR, encoders
+SC_BIND_IP=127.0.0.1 cargo run -- --selftest out.h264 # macOS: encoder → WebRTC → viewer end-to-end
+```
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| macOS keeps asking for Screen Recording | Turn on **Screen Cast** in *System Settings → Privacy & Security → Screen & System Audio Recording*, then quit and reopen the app. Remove duplicate entries with **–** first. |
+| Phone can't open the address | Both devices must be on the same Wi-Fi (no "guest" network or AP isolation). Allow Local Network (macOS) or the firewall prompt (Windows). |
+| "Wrong or expired PIN" after scanning | The PIN was changed with ↺ PIN. Scan the new QR code. |
+| No sound on the phone | Tap **🔊 Turn on sound** (browsers often start muted). Check the movie isn't muted on the computer. |
+| "Too many wrong tries" | Wait 5 minutes, or scan the QR code once the lock-out ends. |
+| Linux: casting doesn't start | Screen Cast needs X11 or XWayland. It sets `GDK_BACKEND=x11` automatically, so check that XWayland is installed. |
+| Video is choppy | Move closer to the router or use 5 GHz Wi-Fi. Fewer simultaneous viewers also helps. |
+
+## Project layout
+
+| Path | What |
+|---|---|
+| `src-tauri/src/main.rs` | Window, toolbar and sandboxed browser webviews, navigation/pop-up/download policy, commands, fullscreen sync, About |
+| `src-tauri/src/harden.js` | Script injected into every frame before page scripts (API lockdown, in-page fullscreen) |
+| `src-tauri/src/adblock.rs`, `contentrules/` | Filter engine + per-platform native blocking |
+| `src-tauri/src/capture/` | Own-window capture: `macos.rs`, `windows.rs`, `linux.rs`, shared OpenH264 path `soft.rs` |
+| `src-tauri/src/encoder.rs`, `audio.rs` | VideoToolbox H.264 (macOS), Opus + resampling (all) |
+| `src-tauri/src/hub.rs` | WebRTC fan-out to viewers, key-frame on picture loss |
+| `src-tauri/src/server.rs` | LAN web server (PIN, sessions, security headers) |
+| `src-tauri/capabilities/` | Allow-lists of app commands per trusted window |
+| `src-tauri/filters/` | Bundled filter lists |
+| `ui/` | Toolbar, *Scan to watch* and About windows |
+| `web/` | Viewer page served to other devices |
+| `scripts/` | Build, version-bump and release scripts |
+| `docs/screenshots/` | Images used in this README |
+
+## About
+
+**Screen Cast** · developed by **Arun Pandey**, **Arun AI Studio**
+🌐 [arun-pandey.com.np](https://arun-pandey.com.np/)
+
+The current version is shown in the app under **ⓘ → About**, and in the [`VERSION`](VERSION) file.
+
+<sub>Bundled filter lists: EasyList and EasyPrivacy (GPLv3 / CC BY-SA), uBlock Origin badware list (GPLv3). Ad blocking engine: Brave adblock-rust (MPL-2.0). OpenH264 by Cisco (BSD).</sub>
