@@ -23,6 +23,8 @@ T="$ROOT/src-tauri"
 # Cargo.toml: only the [package] version (first match).
 perl -0pi -e 's/(\[package\][^\[]*?\nversion = ")[^"]+(")/${1}'"$NEW"'${2}/' "$T/Cargo.toml"
 perl -pi -e 's/("version":\s*")[^"]+(")/${1}'"$NEW"'${2}/' "$T/tauri.conf.json"
+# npm installer package
+[[ -f "$ROOT/npm/package.json" ]] && perl -pi -e 's/^(  "version":\s*")[^"]+(")/${1}'"$NEW"'${2}/' "$ROOT/npm/package.json"
 # Cargo.lock entry of this package (so `cargo build --locked` keeps working).
 [[ -f "$T/Cargo.lock" ]] && perl -0pi -e 's/(\[\[package\]\]\nname = "screen_cast"\nversion = ")[^"]+(")/${1}'"$NEW"'${2}/' "$T/Cargo.lock"
 perl -0pi -e 's#(<key>CFBundleShortVersionString</key><string>)[^<]+#${1}'"$NEW"'#; s#(<key>CFBundleVersion</key><string>)[^<]+#${1}'"$NEW"'#' "$T/macos/Info.plist"

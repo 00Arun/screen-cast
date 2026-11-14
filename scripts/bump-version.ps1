@@ -21,6 +21,11 @@ Set-Content $cargo ($rx.Replace($text, "`${1}$new`${2}", 1)) -NoNewline
 $conf = "$root\src-tauri\tauri.conf.json"
 $text = Get-Content $conf -Raw
 Set-Content $conf ([regex]::Replace($text, '("version":\s*")[^"]+(")', "`${1}$new`${2}")) -NoNewline
+$npm = "$root\npm\package.json"
+if (Test-Path $npm) {
+  $text = Get-Content $npm -Raw
+  Set-Content $npm ([regex]::Replace($text, '(?m)^(  "version":\s*")[^"]+(")', "`${1}$new`${2}", 1)) -NoNewline
+}
 $lock = "$root\src-tauri\Cargo.lock"
 if (Test-Path $lock) {
   $text = Get-Content $lock -Raw

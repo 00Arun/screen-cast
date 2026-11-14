@@ -10,6 +10,12 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/00Arun/screen-cast/actions/workflows/ci.yml"><img src="https://github.com/00Arun/screen-cast/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://www.npmjs.com/package/screen-cast"><img src="https://img.shields.io/npm/v/screen-cast?label=npm" alt="npm"></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/github/v/release/00Arun/screen-cast?label=release" alt="release"></a>
+</p>
+
+<p align="center">
   <a href="../../releases/latest"><b>⬇ Download the latest release</b></a> ·
   <a href="#install">Install</a> ·
   <a href="#how-to-use">How to use</a> ·
@@ -98,13 +104,23 @@ flowchart LR
 
 ## Download
 
-Go to **[Releases](../../releases/latest)** and download the file for your system:
+**Quickest:** with [Node.js](https://nodejs.org) 18+ installed, run
+
+```bash
+npx screen-cast
+```
+
+It downloads the right build for your computer from GitHub Releases, verifies its SHA-256
+checksum, installs it and opens it. `npx screen-cast uninstall` removes it again. See the
+[npm package](npm/README.md) for all commands.
+
+Or go to **[Releases](../../releases/latest)** and download the file for your system:
 
 | System | File | Requirements |
 |---|---|---|
-| macOS (Apple Silicon) | `ScreenCast-<version>.dmg` | macOS 14 Sonoma or newer |
-| Windows | `Screen Cast_<version>_x64-setup.exe` or `.msi` | Windows 10 (2004+) or 11 |
-| Linux | `screen-cast_<version>_amd64.deb` or `.AppImage` | X11 or Wayland (via XWayland), PulseAudio or PipeWire |
+| macOS (Apple Silicon & Intel) | `ScreenCast-<version>-macos-universal.dmg` | macOS 14 Sonoma or newer |
+| Windows | `ScreenCast-<version>-windows-x64-setup.exe` or `.msi` | Windows 10 (2004+) or 11 |
+| Linux | `ScreenCast-<version>-linux-amd64.deb` or `-linux-x86_64.AppImage` | X11 or Wayland (via XWayland), PulseAudio or PipeWire |
 
 ## Install
 
@@ -125,9 +141,9 @@ Go to **[Releases](../../releases/latest)** and download the file for your syste
 
 ### Linux
 ```bash
-sudo apt install ./screen-cast_<version>_amd64.deb     # Debian / Ubuntu
+sudo apt install ./ScreenCast-<version>-linux-amd64.deb     # Debian / Ubuntu
 # or
-chmod +x Screen.Cast_<version>_amd64.AppImage && ./Screen.Cast_<version>_amd64.AppImage
+chmod +x ScreenCast-<version>-linux-x86_64.AppImage && ./ScreenCast-<version>-linux-x86_64.AppImage
 ```
 `bubblewrap` (a `.deb` dependency) runs websites in WebKit's extra sandbox. `pulseaudio-utils` provides per-app audio capture.
 
@@ -258,16 +274,24 @@ scripts/build-linux.sh
 powershell -ExecutionPolicy Bypass -File scripts\build-windows.ps1
 ```
 
-### Publish a release (downloads on GitHub)
+### Releases and npm (automatic)
 
-Installers are published as **GitHub Releases** (not committed to git). With the
-[GitHub CLI](https://cli.github.com) logged in:
+Pushing to `main` runs two GitHub Actions workflows:
 
-```bash
-scripts/build-dmg.sh && scripts/publish-release.sh     # creates v<version> and uploads the .dmg
-# on Windows / Linux, after building, add their installers to the same release:
-gh release upload v<version> "<path to installer>" --clobber
-```
+| Workflow | What it does |
+|---|---|
+| [`ci.yml`](.github/workflows/ci.yml) | On every push and pull request: Rust tests on macOS, Windows and Linux, an end-to-end media self-test on macOS, and tests, audit and a dry-run pack of the npm package. |
+| [`release.yml`](.github/workflows/release.yml) | When `VERSION` has no `v<version>` tag yet: builds the macOS universal `.dmg`, Windows `.exe`/`.msi` and Linux `.deb`/`.AppImage`, then creates the tag and a GitHub Release with `SHA256SUMS.txt` and the [CHANGELOG](CHANGELOG.md) entry as notes. Finally it publishes the `screen-cast` npm package with provenance through **npm Trusted Publishing** (no token). |
+
+To release, bump the version (`scripts/bump-version.sh`, or any local build), add a
+`## [x.y.z]` section to `CHANGELOG.md`, commit and push.
+
+One-time npm setup (only before the very first npm release):
+1. Publish the package once by hand: `npm login`, then `cd npm && npm publish --access public`.
+2. On npmjs.com, open **screen-cast → Settings → Trusted Publisher → GitHub Actions** and enter
+   owner `00Arun`, repository `screen-cast`, workflow `release.yml`.
+
+`scripts/publish-release.sh` can still upload a locally built `.dmg` by hand.
 
 ### Tests
 
@@ -308,6 +332,8 @@ SC_BIND_IP=127.0.0.1 cargo run -- --selftest out.h264 # macOS: encoder → WebRT
 | `ui/` | Toolbar, *Scan to watch* and About windows |
 | `web/` | Viewer page served to other devices |
 | `scripts/` | Build, version-bump and release scripts |
+| `npm/` | `npx screen-cast` installer package (zero dependencies) |
+| `.github/` | CI, release pipeline and Dependabot |
 | `docs/screenshots/` | Images used in this README |
 
 ## About
